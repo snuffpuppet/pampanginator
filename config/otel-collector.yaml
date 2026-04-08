@@ -1,0 +1,29 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+  filter:
+    traces:
+      span:
+        - 'attributes["http.target"] == "/health"'
+        - 'attributes["http.route"] == "/health"'
+
+exporters:
+  otlp:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch, filter]
+      exporters: [otlp]

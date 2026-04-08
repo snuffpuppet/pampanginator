@@ -13,6 +13,7 @@ from pathlib import Path
 from routes import chat, health
 from services.tool_router import load_tools
 from services import llm
+from telemetry import init_telemetry
 
 
 @asynccontextmanager
@@ -23,6 +24,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Kapampangan Tutor", lifespan=lifespan)
+
+# Must come before route registration so auto-instrumentation covers all routes
+init_telemetry(app)
 
 app.include_router(chat.router)
 app.include_router(health.router)

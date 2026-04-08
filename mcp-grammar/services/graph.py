@@ -14,6 +14,10 @@ Traversal patterns:
 import json
 from pathlib import Path
 from typing import Optional
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
+
+tracer = trace.get_tracer(__name__)
 
 GRAPH_PATH = "/app/data/grammar_graph.json"
 
@@ -47,6 +51,21 @@ def traverse(root: str, relationship: Optional[str] = None) -> dict:
 
     Returns a dict with the root node, relationship, and matching results.
     """
+    with tracer.start_as_current_span("grammar.traverse") as span:
+        span.set_attribute("kapampangan.root", root)
+        span.set_attribute("kapampangan.relationship", relationship or "all")
+        try:
+            result = _traverse(root, relationship)
+            span.set_attribute("kapampangan.result_count", len(result.get("results", [])))
+            return result
+        except Exception as e:
+            span.set_status(StatusCode.ERROR, str(e))
+            span.record_exception(e)
+            raise
+
+
+def _traverse(root: str, relationship: Optional[str] = None) -> dict:
+    """Internal traversal implementation."""
     root_lower = root.lower()
 
     # Try exact node id first, then search by word field

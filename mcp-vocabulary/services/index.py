@@ -14,6 +14,10 @@ import json
 import re
 from pathlib import Path
 from typing import Optional
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
+
+tracer = trace.get_tracer(__name__)
 
 VOCAB_PATH = "/app/data/vocabulary.json"
 
@@ -64,6 +68,22 @@ def load() -> None:
 
 def lookup(term: str, limit: int = 6) -> list[dict]:
     """Return up to `limit` entries relevant to `term`."""
+    with tracer.start_as_current_span("vocabulary.search") as span:
+        span.set_attribute("kapampangan.term", term)
+        span.set_attribute("kapampangan.limit", limit)
+        try:
+            results = _lookup(term, limit)
+            span.set_attribute("kapampangan.result_found", len(results) > 0)
+            span.set_attribute("kapampangan.result_count", len(results))
+            return results
+        except Exception as e:
+            span.set_status(StatusCode.ERROR, str(e))
+            span.record_exception(e)
+            raise
+
+
+def _lookup(term: str, limit: int) -> list[dict]:
+    """Internal lookup implementation."""
     term_lower = term.lower().strip()
 
     # 1. Exact match

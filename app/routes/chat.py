@@ -26,7 +26,7 @@ async def chat(request: ChatRequest):
     messages = history.get_history(session_id)
 
     try:
-        response_text, tools_used = await llm.complete(messages)
+        response_text, tools_used = await llm.complete(messages, session_id=session_id)
     except Exception as e:
         # Remove the user message we just appended so history stays consistent
         history.clear(session_id)

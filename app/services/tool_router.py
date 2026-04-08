@@ -12,6 +12,10 @@ import os
 import yaml
 import httpx
 from pathlib import Path
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
+
+tracer = trace.get_tracer(__name__)
 
 
 _tools: list[dict] = []
@@ -57,7 +61,7 @@ def get_tool_definitions() -> list[dict]:
     ]
 
 
-async def dispatch(tool_name: str, parameters: dict) -> dict:
+async def dispatch(tool_name: str, parameters: dict, session_id: str = "") -> dict:
     """Send a tool call to its MCP server and return the response body."""
     tool = next((t for t in _tools if t["name"] == tool_name), None)
     if tool is None:
@@ -71,12 +75,18 @@ async def dispatch(tool_name: str, parameters: dict) -> dict:
     env_key  = f"{tool_name.upper()}_ENDPOINT"
     endpoint = os.getenv(env_key, endpoint)
 
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.request(method, endpoint, json=parameters)
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPStatusError as e:
-        return {"error": f"{tool_name} returned {e.response.status_code}", "detail": e.response.text}
-    except httpx.RequestError as e:
-        return {"error": f"{tool_name} unreachable", "detail": str(e)}
+    with tracer.start_as_current_span("tool.route") as span:
+        span.set_attribute("tool.name", tool_name)
+        span.set_attribute("tool.endpoint", endpoint)
+        span.set_attribute("kapampangan.session_id", session_id)
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.request(method, endpoint, json=parameters)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            span.set_status(StatusCode.ERROR, f"{tool_name} returned {e.response.status_code}")
+            return {"error": f"{tool_name} returned {e.response.status_code}", "detail": e.response.text}
+        except httpx.RequestError as e:
+            span.set_status(StatusCode.ERROR, f"{tool_name} unreachable")
+            return {"error": f"{tool_name} unreachable", "detail": str(e)}

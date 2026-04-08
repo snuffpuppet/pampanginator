@@ -10,22 +10,58 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001
       - GRAMMAR_SERVICE_URL=http://mcp-grammar:8002
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=kapampangan-app
+      - ENVIRONMENT=development
+      - SERVICE_VERSION=0.1.0
     volumes:
       - ./config:/app/config        # Mount so prompt/tools changes take effect on restart
     depends_on:
       - mcp-vocabulary
       - mcp-grammar
+      - otel-collector
 
   mcp-vocabulary:
     build: ./mcp-vocabulary
     ports:
       - "8001:8001"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=kapampangan-mcp-vocabulary
+      - ENVIRONMENT=development
+      - SERVICE_VERSION=0.1.0
     volumes:
       - ./mcp-vocabulary/data:/app/data   # Mount so vocabulary.json can be updated without rebuild
+    depends_on:
+      - otel-collector
 
   mcp-grammar:
     build: ./mcp-grammar
     ports:
       - "8002:8002"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=kapampangan-mcp-grammar
+      - ENVIRONMENT=development
+      - SERVICE_VERSION=0.1.0
     volumes:
       - ./mcp-grammar/data:/app/data      # Mount so grammar_graph.json can be updated without rebuild
+    depends_on:
+      - otel-collector
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./config/otel-collector.yaml:/etc/otel-collector.yaml
+    ports:
+      - "4318:4318"   # OTLP HTTP receiver — services send spans here
+      - "8888:8888"   # Collector self-metrics (optional)
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"   # Jaeger UI — http://localhost:16686
+      - "4317:4317"     # OTLP gRPC receiver — collector forwards spans here

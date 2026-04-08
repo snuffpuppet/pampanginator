@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from routes.traverse import router as traverse_router
 from services.graph import load
+from telemetry import init_telemetry
 
 
 @asynccontextmanager
@@ -19,5 +20,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Kapampangan Grammar MCP", lifespan=lifespan)
+
+init_telemetry(app)
 
 app.include_router(traverse_router)

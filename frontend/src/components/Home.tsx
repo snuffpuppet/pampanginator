@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { quickActions } from '../config/ui'
 
 // 8-pointed star (parol) — computed coordinates
 // Center (100,100), outer R=80, inner r=34
@@ -110,60 +111,6 @@ function ParolSVG() {
   )
 }
 
-const QUICK_ACTIONS = [
-  {
-    to: '/chat',
-    icon: '◎',
-    title: 'Talk with Ading',
-    desc: 'Open conversation — ask anything about Kapampangan.',
-    accent: 'var(--amber)',
-  },
-  {
-    to: '/translate',
-    icon: '⇄',
-    title: 'Translate',
-    desc: 'English ↔ Kapampangan with usage notes.',
-    accent: 'var(--terra-light)',
-  },
-  {
-    to: '/grammar',
-    icon: '∂',
-    title: 'Grammar Explorer',
-    desc: 'Verb focus, aspects, pronouns, particles & more.',
-    accent: 'var(--forest-light, #3d8a65)',
-  },
-  {
-    to: '/vocabulary',
-    icon: '◈',
-    title: 'Vocabulary & Drill',
-    desc: 'Browse all categories. Drill with flashcards.',
-    accent: 'var(--amber-light)',
-  },
-  {
-    to: '/chat',
-    icon: '✦',
-    title: 'Check My Kapampangan',
-    desc: 'Paste a sentence for Ading\'s gentle correction.',
-    accent: 'var(--terra)',
-    state: { mode: 'correction' },
-  },
-  {
-    to: '/chat',
-    icon: '⬡',
-    title: 'Scenario Practice',
-    desc: 'Family dinner, market, office — roleplay with Ading.',
-    accent: '#9b6a9b',
-    state: { mode: 'scenario' },
-  },
-  {
-    to: '/compare',
-    icon: '⇌',
-    title: 'Compare LLMs',
-    desc: 'Claude vs local model — same question, side by side.',
-    accent: '#6a8fc1',
-  },
-]
-
 export default function Home() {
   const navigate = useNavigate()
 
@@ -236,7 +183,7 @@ export default function Home() {
           gridTemplateColumns: 'repeat(2, 1fr)',
           gap: '0.65rem',
         }}>
-          {QUICK_ACTIONS.map((action, idx) => (
+          {quickActions.map((action, idx) => (
             <button
               key={action.title}
               className="card-interactive"
@@ -247,7 +194,7 @@ export default function Home() {
                 background: 'var(--bg-2)',
                 cursor: 'pointer',
                 border: '1px solid var(--border)',
-                gridColumn: idx === QUICK_ACTIONS.length - 1 && QUICK_ACTIONS.length % 2 !== 0 ? 'span 2' : undefined,
+                gridColumn: idx === quickActions.length - 1 && quickActions.length % 2 !== 0 ? 'span 2' : undefined,
               }}
             >
               <div style={{

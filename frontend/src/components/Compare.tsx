@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { streamChat, getBackendStatus } from '../services/api'
 import type { BackendStatus } from '../services/api'
+import { compareSamplePrompts } from '../config/ui'
 
 interface PanelState {
   text: string
@@ -10,14 +11,6 @@ interface PanelState {
 }
 
 const EMPTY_PANEL: PanelState = { text: '', status: 'idle', elapsedMs: null, error: null }
-
-const SAMPLE_PROMPTS = [
-  'How do I say "I miss you" in Kapampangan?',
-  'Explain the difference between sinulat and sumulat.',
-  'Translate: "Good morning, have you eaten yet?"',
-  'What does "Kaluguran da ka" mean?',
-  'How do I conjugate the verb "mangan" in all three aspects?',
-]
 
 export default function Compare() {
   const [query, setQuery]         = useState('')
@@ -135,7 +128,7 @@ export default function Compare() {
       {/* Sample prompts */}
       <div style={{ padding: '0 1.25rem 0.6rem', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-          {SAMPLE_PROMPTS.map(p => (
+          {compareSamplePrompts.map(p => (
             <button
               key={p}
               onClick={() => setQuery(p)}
@@ -239,7 +232,7 @@ interface PanelProps {
   accentColor: string
   state: PanelState
   isRunning: boolean
-  ref: React.RefObject<HTMLDivElement | null>
+  ref: React.RefObject<HTMLDivElement>
 }
 
 function Panel({ label, sublabel, accentColor, state, isRunning, ref }: PanelProps) {

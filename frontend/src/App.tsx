@@ -1,11 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import BottomNav from './components/layout/BottomNav'
-import Home from './pages/Home'
-import Chat from './pages/Chat'
-import Translate from './pages/Translate'
-import Grammar from './pages/Grammar'
-import Vocabulary from './pages/Vocabulary'
-import Compare from './pages/Compare'
+import BottomNav from './components/BottomNav'
+import Home from './components/Home'
+import Chat from './components/Chat'
+import Translate from './components/Translate'
+import Grammar from './components/Grammar'
+import Vocabulary from './components/Vocabulary'
+import Compare from './components/Compare'
 
 export default function App() {
   return (

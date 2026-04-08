@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import ChatWindow from '../components/chat/ChatWindow'
+import ChatWindow from './ChatWindow'
 import { useConversation } from '../store/conversation'
 
 export default function Chat() {

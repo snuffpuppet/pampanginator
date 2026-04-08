@@ -1,5 +1,10 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const SYSTEM_PROMPT_PATH = join(__dirname, '../config/system_prompt.md')
 
 // ─── Shared SSE streaming helper ─────────────────────────────────────────────
 async function streamOllama(
@@ -79,6 +84,7 @@ export default defineConfig(({ mode }) => {
   const anthropicKey   = env.ANTHROPIC_API_KEY || ''
 
   return {
+    build: { outDir: '../app/frontend' },
     plugins: [
       react(),
       {
@@ -112,8 +118,7 @@ export default defineConfig(({ mode }) => {
               try {
                 const { messages } = JSON.parse(body)
                 const { readFileSync } = await import('fs')
-                const { resolve }      = await import('path')
-                const systemPrompt = readFileSync(resolve('./config/system_prompt.md'), 'utf-8')
+                const systemPrompt = readFileSync(SYSTEM_PROMPT_PATH, 'utf-8')
 
                 res.writeHead(200, {
                   'Content-Type':  'text/event-stream',

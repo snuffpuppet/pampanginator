@@ -6,11 +6,11 @@
  */
 
 import { useEffect, useRef } from 'react'
-import { useConversation } from '../../store/conversation'
-import type { Mode } from '../../services/api'
+import { useConversation } from '../store/conversation'
+import type { Mode } from '../services/api'
 import MessageBubble from './MessageBubble'
 import TypingIndicator from './TypingIndicator'
-import ChatInput from './ChatInput'
+import InputBar from './InputBar'
 
 interface Props {
   mode?: Mode
@@ -75,7 +75,7 @@ export default function ChatWindow({ mode = 'chat', scenarioName, placeholder }:
         </div>
       )}
 
-      <ChatInput
+      <InputBar
         onSend={(text) => sendMessage(text, mode, scenarioName)}
         disabled={isStreaming}
         placeholder={placeholder}

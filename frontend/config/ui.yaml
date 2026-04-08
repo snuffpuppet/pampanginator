@@ -1,0 +1,90 @@
+navigation:
+  - to: /
+    label: Home
+    icon: home
+  - to: /chat
+    label: Ading
+    icon: chat
+  - to: /translate
+    label: Translate
+    icon: translate
+  - to: /grammar
+    label: Grammar
+    icon: grammar
+  - to: /vocabulary
+    label: Vocab
+    icon: vocabulary
+
+quick_actions:
+  - to: /chat
+    icon: "◎"
+    title: Talk with Ading
+    desc: Open conversation — ask anything about Kapampangan.
+    accent: var(--amber)
+  - to: /translate
+    icon: "⇄"
+    title: Translate
+    desc: "English ↔ Kapampangan with usage notes."
+    accent: var(--terra-light)
+  - to: /grammar
+    icon: "∂"
+    title: Grammar Explorer
+    desc: "Verb focus, aspects, pronouns, particles & more."
+    accent: "var(--forest-light, #3d8a65)"
+  - to: /vocabulary
+    icon: "◈"
+    title: Vocabulary & Drill
+    desc: Browse all categories. Drill with flashcards.
+    accent: var(--amber-light)
+  - to: /chat
+    icon: "✦"
+    title: Check My Kapampangan
+    desc: "Paste a sentence for Ading's gentle correction."
+    accent: var(--terra)
+    state:
+      mode: correction
+  - to: /chat
+    icon: "⬡"
+    title: Scenario Practice
+    desc: "Family dinner, market, office — roleplay with Ading."
+    accent: "#9b6a9b"
+    state:
+      mode: scenario
+  - to: /compare
+    icon: "⇌"
+    title: Compare LLMs
+    desc: "Claude vs local model — same question, side by side."
+    accent: "#6a8fc1"
+
+scenarios:
+  - id: family
+    label: Family Conversation
+    icon: "🏠"
+    opening_prompt: Practice a warm family dinner conversation in Kapampangan
+  - id: market
+    label: At the Market
+    icon: "🛒"
+    opening_prompt: Practice buying food at a Pampanga market
+  - id: professional
+    label: Professional Context
+    icon: "💼"
+    opening_prompt: Practice a formal workplace introduction in Kapampangan
+  - id: greeting
+    label: Greetings & Small Talk
+    icon: "👋"
+    opening_prompt: Practice common Kapampangan greetings and small talk
+  - id: food
+    label: Food & Cooking
+    icon: "🍲"
+    opening_prompt: Learn vocabulary around Kapampangan food and cooking
+
+compare_sample_prompts:
+  - "How do I say \"I miss you\" in Kapampangan?"
+  - Explain the difference between sinulat and sumulat.
+  - "Translate: \"Good morning, have you eaten yet?\""
+  - What does "Kaluguran da ka" mean?
+  - How do I conjugate the verb "mangan" in all three aspects?
+
+sidebar_panels:
+  - grammar_notes
+  - vocabulary_cards

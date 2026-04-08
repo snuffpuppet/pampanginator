@@ -1,0 +1,330 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Design Tokens ─────────────────────────────────────────── */
+:root {
+  --bg-base:       #080503;
+  --bg-1:          #130b06;
+  --bg-2:          #1e1009;
+  --bg-3:          #2a1810;
+  --border:        #3d2415;
+  --border-light:  #5c3a22;
+  --amber:         #f5a623;
+  --amber-light:   #fbbf5a;
+  --amber-dim:     #9b6a1a;
+  --amber-glow:    rgba(245, 166, 35, 0.12);
+  --terra:         #c1440e;
+  --terra-light:   #e05a20;
+  --forest:        #2d6a4f;
+  --text:          #fdf0e3;
+  --text-muted:    #9b7355;
+  --text-dim:      #5c3d28;
+  --nav-height:    56px;
+}
+
+/* ─── Reset & Base ──────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text);
+  font-family: 'Sora', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100svh;
+  overflow-x: hidden;
+}
+
+/* Grain overlay — gives warmth and depth */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: var(--bg-1); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--amber-dim); }
+
+/* ─── Typography ────────────────────────────────────────────── */
+.font-display { font-family: 'Cormorant Garamond', Georgia, serif; }
+
+/* Kapampangan text — italic, amber, slightly larger */
+.kap {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-style: italic;
+  color: var(--amber);
+  font-size: 1.08em;
+  font-weight: 500;
+}
+
+/* ─── Layout Helpers ────────────────────────────────────────── */
+.page {
+  height: calc(100svh - var(--nav-height));
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.page-padded {
+  padding: 1.25rem 1rem 2rem;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+/* ─── Ambient Background ────────────────────────────────────── */
+.parol-bg {
+  background-image:
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(245,166,35,0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 30% at 80% 100%, rgba(193,68,14,0.06) 0%, transparent 60%);
+}
+
+/* ─── Cards ─────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.card-interactive {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+.card-interactive:hover {
+  background: var(--bg-3);
+  border-color: var(--amber-dim);
+  transform: translateY(-2px);
+}
+.card-interactive:active { transform: translateY(0); }
+
+/* ─── Buttons ───────────────────────────────────────────────── */
+.btn-amber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1.25rem;
+  background: var(--amber);
+  color: var(--bg-base);
+  font-family: 'Sora', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+  letter-spacing: 0.01em;
+}
+.btn-amber:hover { background: var(--amber-light); }
+.btn-amber:active { transform: scale(0.97); }
+.btn-amber:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: 'Sora', sans-serif;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-ghost:hover { border-color: var(--amber-dim); color: var(--text); }
+
+/* ─── Inputs ────────────────────────────────────────────────── */
+.input {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'Sora', sans-serif;
+  font-size: 0.9rem;
+  padding: 0.65rem 0.9rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
+  resize: none;
+}
+.input:focus {
+  border-color: var(--amber-dim);
+  box-shadow: 0 0 0 3px rgba(245,166,35,0.08);
+}
+.input::placeholder { color: var(--text-dim); }
+
+/* ─── Message Bubbles ───────────────────────────────────────── */
+.bubble-ading {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 4px 16px 16px 16px;
+  padding: 0.75rem 1rem;
+  max-width: 85%;
+  align-self: flex-start;
+  box-shadow: 0 2px 16px rgba(245,166,35,0.06);
+}
+
+.bubble-user {
+  background: var(--bg-3);
+  border: 1px solid var(--border-light);
+  border-radius: 16px 4px 16px 16px;
+  padding: 0.75rem 1rem;
+  max-width: 85%;
+  align-self: flex-end;
+}
+
+/* ─── Message Content Typography ───────────────────────────── */
+.msg-content p { margin-bottom: 0.5rem; }
+.msg-content p:last-child { margin-bottom: 0; }
+.msg-content strong { color: var(--text); font-weight: 600; }
+.msg-content em { font-family: 'Cormorant Garamond', serif; font-style: italic; color: var(--amber); font-size: 1.08em; }
+.msg-content ul { padding-left: 1.2rem; margin: 0.4rem 0; }
+.msg-content li { margin-bottom: 0.2rem; }
+.msg-content h3 { font-family: 'Cormorant Garamond', serif; font-size: 1.15em; color: var(--amber-light); margin-bottom: 0.4rem; font-weight: 600; }
+.msg-content table { width: 100%; border-collapse: collapse; margin: 0.6rem 0; font-size: 0.85rem; }
+.msg-content th { background: var(--bg-3); color: var(--amber-light); font-weight: 600; padding: 0.4rem 0.6rem; text-align: left; border: 1px solid var(--border); }
+.msg-content td { padding: 0.35rem 0.6rem; border: 1px solid var(--border); color: var(--text-muted); }
+.msg-content td:first-child em { color: var(--amber); }
+.msg-content hr { border: none; border-top: 1px solid var(--border); margin: 0.75rem 0; }
+
+/* ─── Typing Indicator ──────────────────────────────────────── */
+@keyframes typingDot {
+  0%, 60%, 100% { opacity: 0.2; transform: scale(0.75) translateY(0); }
+  30%           { opacity: 1;   transform: scale(1)    translateY(-3px); }
+}
+.typing-dot { animation: typingDot 1.3s ease infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.18s; }
+.typing-dot:nth-child(3) { animation-delay: 0.36s; }
+
+/* ─── Message Enter Animation ───────────────────────────────── */
+@keyframes msgEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.msg-enter { animation: msgEnter 0.28s ease forwards; }
+
+/* ─── Page Enter ─────────────────────────────────────────────── */
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.page-enter { animation: pageEnter 0.32s ease forwards; }
+
+/* Staggered children */
+.stagger > * { opacity: 0; animation: pageEnter 0.38s ease forwards; }
+.stagger > *:nth-child(1) { animation-delay: 0.04s; }
+.stagger > *:nth-child(2) { animation-delay: 0.09s; }
+.stagger > *:nth-child(3) { animation-delay: 0.14s; }
+.stagger > *:nth-child(4) { animation-delay: 0.19s; }
+.stagger > *:nth-child(5) { animation-delay: 0.24s; }
+.stagger > *:nth-child(6) { animation-delay: 0.29s; }
+.stagger > *:nth-child(7) { animation-delay: 0.34s; }
+.stagger > *:nth-child(8) { animation-delay: 0.39s; }
+.stagger > *:nth-child(9) { animation-delay: 0.44s; }
+.stagger > *:nth-child(10) { animation-delay: 0.49s; }
+
+/* ─── Parol (star lantern) sway ─────────────────────────────── */
+@keyframes parabolSway {
+  0%, 100% { transform: rotate(-1.8deg); }
+  50%       { transform: rotate(1.8deg); }
+}
+.parol-sway {
+  animation: parabolSway 6s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+/* ─── Flashcard Flip ─────────────────────────────────────────── */
+.flashcard-scene { perspective: 900px; }
+.flashcard-inner {
+  position: relative; width: 100%; height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.52s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.flashcard-inner.flipped { transform: rotateY(180deg); }
+.flashcard-face {
+  position: absolute; inset: 0;
+  backface-visibility: hidden;
+  border-radius: 18px;
+  display: flex; align-items: center; justify-content: center;
+}
+.flashcard-back { transform: rotateY(180deg); }
+
+/* ─── Tab Pill ───────────────────────────────────────────────── */
+.tab-pill {
+  padding: 0.35rem 0.85rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: transparent;
+}
+.tab-pill.active {
+  background: var(--bg-3);
+  border-color: var(--amber-dim);
+  color: var(--amber-light);
+}
+.tab-pill:not(.active):hover { color: var(--text); background: var(--bg-2); }
+
+/* ─── Section Heading Deco ──────────────────────────────────── */
+.section-heading {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.section-heading::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 1.2em;
+  background: var(--amber);
+  border-radius: 2px;
+  opacity: 0.7;
+}
+
+/* ─── Bottom Nav ─────────────────────────────────────────────── */
+.bottom-nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: var(--nav-height);
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 100;
+}
+
+/* ─── Vocab table ─────────────────────────────────────────────── */
+.vocab-table { width: 100%; border-collapse: collapse; }
+.vocab-table th {
+  text-align: left; padding: 0.5rem 0.75rem;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+.vocab-table td { padding: 0.55rem 0.75rem; border-bottom: 1px solid rgba(61,36,21,0.5); }
+.vocab-table tr:last-child td { border-bottom: none; }
+.vocab-table tr:hover td { background: rgba(42,24,16,0.5); }

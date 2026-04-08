@@ -17,12 +17,19 @@ tools:
         type: string
         required: false
         description: "word | phrase | verb | noun | adjective"
+      - name: limit
+        type: integer
+        required: false
+        description: "Maximum number of entries to return (default 6, max 20)"
 
   - name: grammar_lookup
     description: >
-      Traverse the Kapampangan grammar knowledge graph to find aspect forms, focus
-      types, related verb forms, or derived nouns for a given root word or grammar
-      concept.
+      Query the Kapampangan grammar knowledge graph. Use this for any grammar question:
+      verb aspects and conjugation, verb focus types (actor/object/goal/locative/circumstantial),
+      pronouns (absolutive and ergative sets), case markers, demonstratives, particles,
+      negation, ligature, and existential constructions. Pass a verb root (e.g. 'mangan'),
+      a grammar concept id (e.g. 'actor_focus', 'particles', 'demonstratives',
+      'absolutive_pronouns', 'case_system'), or any grammar term the learner mentions.
     endpoint: http://mcp-grammar:8002/traverse
     method: POST
     timeout_seconds: 10
@@ -30,7 +37,7 @@ tools:
       - name: root
         type: string
         required: true
-        description: "Verb root or grammar concept node id (e.g. 'mangan', 'actor_focus')"
+        description: "Verb root or grammar concept node id (e.g. 'mangan', 'actor_focus', 'particles', 'demonstratives')"
       - name: relationship
         type: string
         required: false

@@ -12,11 +12,13 @@ from pathlib import Path
 
 from routes import chat, health
 from services.tool_router import load_tools
+from services import llm
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_tools("/app/config/tools.yaml")
+    llm.init()
     yield
 
 

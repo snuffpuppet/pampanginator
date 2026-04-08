@@ -18,9 +18,15 @@ MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 1024
 SYSTEM_PROMPT_PATH = "/app/config/system_prompt.md"
 
+_client: anthropic.AsyncAnthropic | None = None
+_system_prompt: str | None = None
 
-def _load_system_prompt() -> str:
-    return Path(SYSTEM_PROMPT_PATH).read_text(encoding="utf-8")
+
+def init(system_prompt_path: str = SYSTEM_PROMPT_PATH) -> None:
+    """Initialise the Anthropic client and load the system prompt. Call once at startup."""
+    global _client, _system_prompt
+    _client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    _system_prompt = Path(system_prompt_path).read_text(encoding="utf-8")
 
 
 async def complete(messages: list[dict]) -> tuple[str, list[str]]:
@@ -31,8 +37,8 @@ async def complete(messages: list[dict]) -> tuple[str, list[str]]:
     Implements the agentic loop: Claude may request tool calls, we execute
     them, return results, and Claude produces a final text response.
     """
-    client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    system_prompt = _load_system_prompt()
+    client = _client
+    system_prompt = _system_prompt
     tool_definitions = get_tool_definitions()
     tools_used: list[str] = []
 

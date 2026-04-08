@@ -125,7 +125,7 @@ export const useConversation = create<ConversationStore>()(
         }),
     }),
     {
-      name: 'kapilator-chat',
+      name: 'pampanginator-chat',
       partialize: (state) => ({ messages: state.messages }),
     },
   ),

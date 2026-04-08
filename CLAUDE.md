@@ -1,11 +1,14 @@
 # Project Instructions
 
-## Architecture Authority
-This project follows ARCHITECTURE.md as the authoritative design document.
-Before making any structural decision — adding a file, choosing a pattern,
-organising state — read ARCHITECTURE.md first and follow it.
+## Architecture
+Follow ARCHITECTURE.md. The architecture-compliance skill is installed globally
+and will enforce this automatically.
 
-Deviate only if technically impossible, and explain why in a comment.
+## Skills
+When building or modifying MCP servers, read:
+/mnt/skills/examples/mcp-builder/SKILL.md
 
-## Current Status
-Refactoring in progress. See ARCHITECTURE.md for target state.
+## Skills in use on this project
+- mcp-builder: consult when building or modifying MCP servers
+- frontend-design: consult when building or modifying React components
+- architecture-compliance: consult before any structural change

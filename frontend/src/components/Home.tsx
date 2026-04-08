@@ -139,7 +139,7 @@ export default function Home() {
           lineHeight: 1,
           marginBottom: '0.4rem',
         }}>
-          Kapilator
+          Pampanginator
         </h1>
 
         {/* Kapampangan greeting */}

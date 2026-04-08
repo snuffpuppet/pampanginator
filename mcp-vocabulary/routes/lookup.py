@@ -1,9 +1,16 @@
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from typing import Optional
 
 from services.index import lookup, entry_count
 
 router = APIRouter()
+
+
+class LookupRequest(BaseModel):
+    term: str
+    type: Optional[str] = None
+    limit: int = 6
 
 
 @router.get("/lookup/{term}")
@@ -25,16 +32,12 @@ async def lookup_term(
 
 
 @router.post("/lookup")
-async def lookup_post(body: dict):
+async def lookup_post(body: LookupRequest):
     """POST variant — accepts {term, type, limit} body (used by tool_router)."""
-    term = body.get("term", "")
-    limit = int(body.get("limit", 6))
-    if not term:
-        raise HTTPException(status_code=400, detail="'term' is required")
-    results = lookup(term, limit=limit)
+    results = lookup(body.term, limit=body.limit)
     if not results:
-        raise HTTPException(status_code=404, detail=f"No entries found for '{term}'")
-    return {"term": term, "count": len(results), "entries": results}
+        raise HTTPException(status_code=404, detail=f"No entries found for '{body.term}'")
+    return {"term": body.term, "count": len(results), "entries": results}
 
 
 @router.get("/status")

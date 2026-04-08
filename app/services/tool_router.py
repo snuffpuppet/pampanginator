@@ -71,7 +71,12 @@ async def dispatch(tool_name: str, parameters: dict) -> dict:
     env_key  = f"{tool_name.upper()}_ENDPOINT"
     endpoint = os.getenv(env_key, endpoint)
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.request(method, endpoint, json=parameters)
-        response.raise_for_status()
-        return response.json()
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.request(method, endpoint, json=parameters)
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as e:
+        return {"error": f"{tool_name} returned {e.response.status_code}", "detail": e.response.text}
+    except httpx.RequestError as e:
+        return {"error": f"{tool_name} unreachable", "detail": str(e)}

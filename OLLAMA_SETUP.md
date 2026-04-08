@@ -1,6 +1,6 @@
 # Ollama (Local LLM) Setup
 
-Run Kapilator completely offline with no API costs.
+Run Pampanginator completely offline with no API costs.
 
 ## Installation (macOS)
 
@@ -19,7 +19,7 @@ ollama serve
 
 The server listens on `http://localhost:11434` by default.
 
-## Configure Kapilator
+## Configure Pampanginator
 
 Copy `.env.example` to `.env` and set:
 

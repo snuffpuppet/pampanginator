@@ -1,0 +1,37 @@
+tools:
+
+  - name: vocabulary_lookup
+    description: >
+      Look up a Kapampangan word or phrase in the authoritative kaikki.org / Wiktionary
+      vocabulary index. Returns definition, part of speech, IPA pronunciation, aspect
+      forms, example sentences, and etymology where available.
+    endpoint: http://mcp-vocabulary:8001/lookup
+    method: POST
+    timeout_seconds: 10
+    parameters:
+      - name: term
+        type: string
+        required: true
+        description: "The Kapampangan or English word/phrase to look up"
+      - name: type
+        type: string
+        required: false
+        description: "word | phrase | verb | noun | adjective"
+
+  - name: grammar_lookup
+    description: >
+      Traverse the Kapampangan grammar knowledge graph to find aspect forms, focus
+      types, related verb forms, or derived nouns for a given root word or grammar
+      concept.
+    endpoint: http://mcp-grammar:8002/traverse
+    method: POST
+    timeout_seconds: 10
+    parameters:
+      - name: root
+        type: string
+        required: true
+        description: "Verb root or grammar concept node id (e.g. 'mangan', 'actor_focus')"
+      - name: relationship
+        type: string
+        required: false
+        description: "aspect_of | focus_type | related_form | derived_noun | all"

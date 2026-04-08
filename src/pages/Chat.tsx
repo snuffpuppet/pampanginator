@@ -1,10 +1,10 @@
 import { useNavigate } from 'react-router-dom'
 import ChatWindow from '../components/chat/ChatWindow'
-import { useChatStore } from '../store/chatStore'
+import { useConversation } from '../store/conversation'
 
 export default function Chat() {
   const navigate = useNavigate()
-  const { clearSession } = useChatStore()
+  const { clearConversation } = useConversation()
 
   return (
     <div className="page page-enter" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -43,7 +43,7 @@ export default function Chat() {
 
         <button
           onClick={() => {
-            if (window.confirm('Clear this conversation and start fresh?')) clearSession()
+            if (window.confirm('Clear this conversation and start fresh?')) clearConversation()
           }}
           style={{
             background: 'none', border: 'none', cursor: 'pointer',

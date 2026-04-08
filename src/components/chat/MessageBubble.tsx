@@ -1,4 +1,4 @@
-import type { Message } from '../../store/chatStore'
+import type { Message } from '../../store/conversation'
 
 // Minimal markdown renderer: bold, italic (→ kap style), headers, lists, hr, line breaks
 function renderMarkdown(text: string): string {

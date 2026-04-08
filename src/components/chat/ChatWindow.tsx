@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
-import { useChatStore } from '../../store/chatStore'
-import { streamAdingResponse } from '../../lib/ading'
-import type { Mode } from '../../lib/ading'
+/**
+ * ChatWindow — pure display component.
+ *
+ * Renders the message list from the store. Passes sendMessage to ChatInput.
+ * Contains no API calls and no business logic.
+ */
+
+import { useEffect, useRef } from 'react'
+import { useConversation } from '../../store/conversation'
+import type { Mode } from '../../services/api'
 import MessageBubble from './MessageBubble'
 import TypingIndicator from './TypingIndicator'
 import ChatInput from './ChatInput'
@@ -13,39 +19,16 @@ interface Props {
 }
 
 export default function ChatWindow({ mode = 'chat', scenarioName, placeholder }: Props) {
-  const { messages, isStreaming, streamingText, addUserMessage, appendStreaming, finalizeStream, setStreaming } = useChatStore()
+  const { messages, isStreaming, streamingText, sourcesUsed, sendMessage } = useConversation()
   const bottomRef = useRef<HTMLDivElement>(null)
-  const [lastUsedSources, setLastUsedSources] = useState(false)
 
-  // Scroll to bottom on new messages or streaming
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length, streamingText])
 
-  const handleSend = async (text: string) => {
-    if (isStreaming) return
-
-    addUserMessage(text)
-    setStreaming(true)
-
-    const apiMessages = [
-      ...messages.map((m) => ({ role: m.role, content: m.content })),
-      { role: 'user' as const, content: text },
-    ]
-
-    try {
-      const result = await streamAdingResponse(apiMessages, appendStreaming, mode, scenarioName)
-      setLastUsedSources(result.sourcesUsed)
-    } catch (err) {
-      console.error(err)
-      appendStreaming('\n\n*Pasensya na* — something went wrong. Please try again.')
-    } finally {
-      finalizeStream()
-    }
-  }
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
       {/* Messages */}
       <div style={{
         flex: 1,
@@ -63,7 +46,6 @@ export default function ChatWindow({ mode = 'chat', scenarioName, placeholder }:
           />
         ))}
 
-        {/* Streaming message */}
         {isStreaming && streamingText && (
           <MessageBubble
             message={{ id: 'streaming', role: 'assistant', content: streamingText, timestamp: Date.now() }}
@@ -71,14 +53,13 @@ export default function ChatWindow({ mode = 'chat', scenarioName, placeholder }:
           />
         )}
 
-        {/* Typing indicator (before first token arrives) */}
         {isStreaming && !streamingText && <TypingIndicator />}
 
         <div ref={bottomRef} />
       </div>
 
-      {/* Source indicator */}
-      {lastUsedSources && !isStreaming && (
+      {/* Source attribution */}
+      {sourcesUsed && !isStreaming && (
         <div style={{
           padding: '0.3rem 1rem',
           fontSize: '0.68rem',
@@ -94,7 +75,11 @@ export default function ChatWindow({ mode = 'chat', scenarioName, placeholder }:
         </div>
       )}
 
-      <ChatInput onSend={handleSend} disabled={isStreaming} placeholder={placeholder} />
+      <ChatInput
+        onSend={(text) => sendMessage(text, mode, scenarioName)}
+        disabled={isStreaming}
+        placeholder={placeholder}
+      />
     </div>
   )
 }

@@ -1,0 +1,106 @@
+{
+  "nodes": [
+    { "id": "syllabary", "type": "grammar_concept", "label": "Abakada Syllabary", "summary": "The 16 base syllables: AA BA KA DA GA LA MA NA NGA PA RA SA TA WA YA. Each consonant carries an inherent /a/ vowel. Every word is a sequence of V or CV units." },
+    { "id": "vso_word_order", "type": "grammar_concept", "label": "VSO Word Order", "summary": "Default word order is Verb – Subject – Object, though topic prominence allows flexibility." },
+    { "id": "verb_focus_system", "type": "grammar_concept", "label": "Verb Focus System", "summary": "Austronesian alignment — the verb changes with affixes to show which noun is the topic (focus) of the sentence." },
+    { "id": "actor_focus", "type": "focus_type", "label": "Actor Focus (AF)", "affix": "mag-, mang-, -um-", "example": "Sinulat ku. (I wrote.)" },
+    { "id": "object_focus", "type": "focus_type", "label": "Object / Patient Focus (OF)", "affix": "-en, -an, i-", "example": "Silatanan na ku. (He wrote to me.)" },
+    { "id": "goal_focus", "type": "focus_type", "label": "Goal / Benefactive Focus (BF)", "affix": "-an", "example": "Dinan kong pera. (I gave them money.)" },
+    { "id": "locative_focus", "type": "focus_type", "label": "Locative Focus (LF)", "affix": "-an", "example": "Direction or location as topic." },
+    { "id": "circumstantial_focus", "type": "focus_type", "label": "Circumstantial Focus (CF)", "affix": "i-", "example": "Instrument or means as subject." },
+    { "id": "progressive_aspect", "type": "aspect", "label": "Progressive", "meaning": "Currently happening (ongoing)", "formation": "Reduplicate the first CV syllable" },
+    { "id": "completed_aspect", "type": "aspect", "label": "Completed", "meaning": "Already done (past)", "formation": "Insert -in- after the first consonant" },
+    { "id": "contemplated_aspect", "type": "aspect", "label": "Contemplated", "meaning": "Not yet done (future)", "formation": "Insert -um- after the first consonant (mag- / -um- prefix forms)" },
+    { "id": "absolutive_case", "type": "case", "label": "Absolutive", "meaning": "Topic / subject", "common": "ing (sg), deng/reng (pl)", "personal": "i (sg), di/ri (pl)" },
+    { "id": "ergative_case", "type": "case", "label": "Ergative", "meaning": "Actor of transitive verb / possessor", "common": "ning (sg), dening (pl)", "personal": "ni (sg), di/ri (pl)" },
+    { "id": "oblique_case", "type": "case", "label": "Oblique", "meaning": "Location or direction", "common": "king (sg), karing (pl)", "personal": "kay (sg), kari/kadi (pl)" },
+    { "id": "pronoun_rule", "type": "grammar_rule", "label": "Pronoun Always-Present Rule", "summary": "The pronoun must always be present even when the noun it represents is also stated. Dinatang ya i Erning — ya is required alongside i Erning." },
+    { "id": "negation_ali", "type": "grammar_concept", "label": "Ali / E — Negation", "summary": "Negates verbs and statements. E ku pa mengan. (I haven't eaten yet.)" },
+    { "id": "negation_ala", "type": "grammar_concept", "label": "Ala — Existential Negation", "summary": "Negates existence or possession. Opposite of ati. Ala na mung lugud. (There is no more love.)" },
+
+    { "id": "sulat", "type": "verb_root", "meaning": "to write", "focus": "actor_focus" },
+    { "id": "susulat", "type": "verb_form", "meaning": "is writing" },
+    { "id": "sinulat", "type": "verb_form", "meaning": "wrote" },
+    { "id": "sumulat", "type": "verb_form", "meaning": "will write" },
+
+    { "id": "mangan", "type": "verb_root", "meaning": "to eat", "focus": "actor_focus" },
+    { "id": "mangan_prog", "type": "verb_form", "meaning": "is eating / eats", "form": "mangan" },
+    { "id": "mengan", "type": "verb_form", "meaning": "ate / has eaten" },
+    { "id": "mamangan", "type": "verb_form", "meaning": "will eat" },
+
+    { "id": "basa", "type": "verb_root", "meaning": "to read", "focus": "object_focus" },
+    { "id": "babasan", "type": "verb_form", "meaning": "is reading" },
+    { "id": "binasa", "type": "verb_form", "meaning": "read (completed)" },
+    { "id": "basan", "type": "verb_form", "meaning": "will read" },
+
+    { "id": "datang", "type": "verb_root", "meaning": "to arrive" },
+    { "id": "dadatang", "type": "verb_form", "meaning": "is arriving" },
+    { "id": "dinatang", "type": "verb_form", "meaning": "arrived" },
+
+    { "id": "lakad", "type": "verb_root", "meaning": "to walk" },
+    { "id": "lalakad", "type": "verb_form", "meaning": "is walking" },
+    { "id": "linakad", "type": "verb_form", "meaning": "walked" },
+    { "id": "lumakad", "type": "verb_form", "meaning": "will walk" },
+
+    { "id": "inum", "type": "verb_root", "meaning": "to drink", "note": "vowel-initial root — -in- and -um- prefix the whole word" },
+    { "id": "iinum", "type": "verb_form", "meaning": "is drinking" },
+    { "id": "ininum", "type": "verb_form", "meaning": "drank" },
+    { "id": "uminom", "type": "verb_form", "meaning": "will drink" },
+
+    { "id": "gawa", "type": "verb_root", "meaning": "to do / make" },
+    { "id": "gagawa", "type": "verb_form", "meaning": "is doing" },
+    { "id": "gewa", "type": "verb_form", "meaning": "did / made" },
+    { "id": "gawan", "type": "verb_form", "meaning": "will do / make" },
+
+    { "id": "muli", "type": "verb_root", "meaning": "to go home" },
+    { "id": "mamuli", "type": "verb_form", "meaning": "is going home / will go home" },
+    { "id": "memuli", "type": "verb_form", "meaning": "went home" }
+  ],
+
+  "edges": [
+    { "from": "verb_focus_system", "relationship": "HAS_FOCUS_TYPE", "to": "actor_focus" },
+    { "from": "verb_focus_system", "relationship": "HAS_FOCUS_TYPE", "to": "object_focus" },
+    { "from": "verb_focus_system", "relationship": "HAS_FOCUS_TYPE", "to": "goal_focus" },
+    { "from": "verb_focus_system", "relationship": "HAS_FOCUS_TYPE", "to": "locative_focus" },
+    { "from": "verb_focus_system", "relationship": "HAS_FOCUS_TYPE", "to": "circumstantial_focus" },
+
+    { "from": "syllabary", "relationship": "ENABLES", "to": "progressive_aspect" },
+    { "from": "syllabary", "relationship": "ENABLES", "to": "completed_aspect" },
+    { "from": "syllabary", "relationship": "ENABLES", "to": "contemplated_aspect" },
+
+    { "from": "sulat", "relationship": "BELONGS_TO_FOCUS", "to": "actor_focus" },
+    { "from": "susulat", "relationship": "PROGRESSIVE_ASPECT_OF", "to": "sulat" },
+    { "from": "sinulat", "relationship": "COMPLETED_ASPECT_OF", "to": "sulat" },
+    { "from": "sumulat", "relationship": "CONTEMPLATED_ASPECT_OF", "to": "sulat" },
+
+    { "from": "mangan", "relationship": "BELONGS_TO_FOCUS", "to": "actor_focus" },
+    { "from": "mangan_prog", "relationship": "PROGRESSIVE_ASPECT_OF", "to": "mangan" },
+    { "from": "mengan", "relationship": "COMPLETED_ASPECT_OF", "to": "mangan" },
+    { "from": "mamangan", "relationship": "CONTEMPLATED_ASPECT_OF", "to": "mangan" },
+
+    { "from": "basa", "relationship": "BELONGS_TO_FOCUS", "to": "object_focus" },
+    { "from": "babasan", "relationship": "PROGRESSIVE_ASPECT_OF", "to": "basa" },
+    { "from": "binasa", "relationship": "COMPLETED_ASPECT_OF", "to": "basa" },
+    { "from": "basan", "relationship": "CONTEMPLATED_ASPECT_OF", "to": "basa" },
+
+    { "from": "dadatang", "relationship": "PROGRESSIVE_ASPECT_OF", "to": "datang" },
+    { "from": "dinatang", "relationship": "COMPLETED_ASPECT_OF", "to": "datang" },
+    { "from": "datang", "relationship": "CONTEMPLATED_ASPECT_OF", "to": "datang" },
+
+    { "from": "lalakad", "relationship": "PROGRESSIVE_ASPECT_OF", "to": "lakad" },
+    { "from": "linakad", "relationship": "COMPLETED_ASPECT_OF", "to": "lakad" },
+    { "from": "lumakad", "relationship": "CONTEMPLATED_ASPECT_OF", "to": "lakad" },
+
+    { "from": "iinum", "relationship": "PROGRESSIVE_ASPECT_OF", "to": "inum" },
+    { "from": "ininum", "relationship": "COMPLETED_ASPECT_OF", "to": "inum" },
+    { "from": "uminom", "relationship": "CONTEMPLATED_ASPECT_OF", "to": "inum" },
+
+    { "from": "gagawa", "relationship": "PROGRESSIVE_ASPECT_OF", "to": "gawa" },
+    { "from": "gewa", "relationship": "COMPLETED_ASPECT_OF", "to": "gawa" },
+    { "from": "gawan", "relationship": "CONTEMPLATED_ASPECT_OF", "to": "gawa" },
+
+    { "from": "mamuli", "relationship": "PROGRESSIVE_ASPECT_OF", "to": "muli" },
+    { "from": "memuli", "relationship": "COMPLETED_ASPECT_OF", "to": "muli" },
+    { "from": "mamuli", "relationship": "CONTEMPLATED_ASPECT_OF", "to": "muli" }
+  ]
+}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { streamAdingResponse } from '../lib/ading'
-import type { Mode } from '../lib/ading'
+import { streamChat } from '../services/api'
+import type { Mode } from '../services/api'
 import { isDatabaseLoaded, getDatabaseSize } from '../lib/lookup'
 
 function renderTranslationHtml(text: string): string {
@@ -33,7 +33,7 @@ export default function Translate() {
     setSourcesUsed(false)
     setIsLoading(true)
     try {
-      const res = await streamAdingResponse(
+      const res = await streamChat(
         [{ role: 'user', content: input.trim() }],
         (chunk) => setResult((r) => r + chunk),
         mode,

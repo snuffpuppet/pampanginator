@@ -1,0 +1,105 @@
+"""
+Vocabulary index service.
+
+Loads vocabulary.json at startup and builds three indexes for fast lookup:
+  - exact:  word (lowercase) → entry
+  - forms:  any inflected form → entry
+  - gloss:  each English gloss word → list of entries
+
+The JSON schema matches the kaikki.org / Wiktionary extract produced by
+scripts/fetch-kaikki.mjs in the frontend source tree.
+"""
+
+import json
+import re
+from pathlib import Path
+from typing import Optional
+
+VOCAB_PATH = "/app/data/vocabulary.json"
+
+_entries: list[dict] = []
+_exact_index: dict[str, dict] = {}
+_form_index: dict[str, dict] = {}
+_gloss_index: dict[str, list[dict]] = {}
+
+_STOP_WORDS = {
+    "the", "and", "for", "are", "but", "not", "you", "all", "can",
+    "was", "one", "our", "out", "day", "get", "has", "him", "his",
+    "man", "new", "now", "old", "see", "two", "way", "who", "did",
+    "let", "put", "say", "she", "too", "use", "that", "this", "with",
+    "have", "from", "they", "will", "been", "than", "what", "when",
+    "would", "there", "their", "about", "into", "more", "some",
+}
+
+
+def load() -> None:
+    global _entries, _exact_index, _form_index, _gloss_index
+
+    path = Path(VOCAB_PATH)
+    if not path.exists():
+        return
+
+    with open(path, encoding="utf-8") as f:
+        _entries = json.load(f)
+
+    _exact_index = {}
+    _form_index = {}
+    _gloss_index = {}
+
+    for entry in _entries:
+        word = entry.get("word", "")
+        _exact_index[word.lower()] = entry
+
+        for form in entry.get("forms", []):
+            form_str = form.get("form", "").lower()
+            if form_str:
+                _form_index[form_str] = entry
+
+        for gloss in entry.get("glosses", []):
+            words = re.sub(r"[^\w\s]", " ", gloss.lower()).split()
+            for w in words:
+                if len(w) > 2 and w not in _STOP_WORDS:
+                    _gloss_index.setdefault(w, []).append(entry)
+
+
+def lookup(term: str, limit: int = 6) -> list[dict]:
+    """Return up to `limit` entries relevant to `term`."""
+    term_lower = term.lower().strip()
+
+    # 1. Exact match
+    if term_lower in _exact_index:
+        return [_exact_index[term_lower]]
+
+    # 2. Inflected form match
+    if term_lower in _form_index:
+        return [_form_index[term_lower]]
+
+    # 3. Prefix match
+    prefix_hits = [e for w, e in _exact_index.items() if w.startswith(term_lower)]
+
+    # 4. English gloss match
+    gloss_hits: list[dict] = []
+    tokens = [w for w in term_lower.split() if len(w) > 2 and w not in _STOP_WORDS]
+    seen: set[str] = set()
+    for token in tokens:
+        for entry in _gloss_index.get(token, []):
+            word = entry.get("word", "")
+            if word not in seen:
+                seen.add(word)
+                gloss_hits.append(entry)
+
+    results: list[dict] = []
+    seen_all: set[str] = set()
+    for entry in prefix_hits + gloss_hits:
+        word = entry.get("word", "")
+        if word not in seen_all:
+            seen_all.add(word)
+            results.append(entry)
+        if len(results) >= limit:
+            break
+
+    return results
+
+
+def entry_count() -> int:
+    return len(_entries)

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { streamAdingResponse, getBackendStatus, BackendStatus } from '../lib/ading'
+import { streamChat, getBackendStatus } from '../services/api'
+import type { BackendStatus } from '../services/api'
 
 interface PanelState {
   text: string
@@ -45,7 +46,7 @@ export default function Compare() {
     ) {
       const t0 = Date.now()
       try {
-        await streamAdingResponse(
+        await streamChat(
           messages,
           (chunk) => setter(prev => ({ ...prev, text: prev.text + chunk })),
           'chat',

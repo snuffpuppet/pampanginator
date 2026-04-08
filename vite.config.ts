@@ -113,7 +113,7 @@ export default defineConfig(({ mode }) => {
                 const { messages } = JSON.parse(body)
                 const { readFileSync } = await import('fs')
                 const { resolve }      = await import('path')
-                const systemPrompt = readFileSync(resolve('./prompt.md'), 'utf-8')
+                const systemPrompt = readFileSync(resolve('./config/system_prompt.md'), 'utf-8')
 
                 res.writeHead(200, {
                   'Content-Type':  'text/event-stream',

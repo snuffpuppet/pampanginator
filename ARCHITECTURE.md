@@ -234,6 +234,43 @@ SSE response format) must be implemented in FastAPI for prod mode to have a work
 LLM path. This is a known open item — until that work is done, prod mode does not
 have end-to-end LLM communication.
 
+### Decision 12 — Observability stack: Grafana + Tempo + Prometheus
+
+The observability stack consists of four containers: `otel-collector`, `tempo`,
+`prometheus`, and `grafana`.
+
+Chosen over the Jaeger alternative referenced in the original architecture:
+- Tempo integrates natively with Grafana (same organisation, shared datasource
+  model) — traces and metrics live in one UI with exemplar links between them
+- Prometheus + Grafana is the de facto standard for metrics in containerised
+  workloads; adding Tempo to the same Grafana instance costs no additional UI
+  complexity
+- Jaeger is traces-only; metric/trace correlation requires additional tooling
+
+Stack data flow:
+- FastAPI services export spans via OTLP HTTP to `otel-collector:4318`
+- The collector batches and forwards to `tempo:4317` (OTLP gRPC)
+- Services expose a `/metrics` endpoint; Prometheus scrapes them on their
+  respective ports
+- Grafana reads from both Tempo (traces) and Prometheus (metrics), with
+  exemplars linking individual metric data points to their originating traces
+
+### Decision 13 — Infrastructure image versioning: pin minor versions, document upgrade path
+
+Third-party infrastructure images (`grafana/tempo`, `grafana/grafana`,
+`prom/prometheus`, `otel/opentelemetry-collector-contrib`) must be pinned to a
+specific version tag in `docker-compose.yml`. Using `latest` is prohibited.
+
+Rationale: `grafana/tempo:latest` resolved to 2.10.3 which introduced a
+default-on Kafka ingestion path, breaking startup without config changes. This
+was discovered during debugging, not at a deliberate upgrade. Breaking config
+changes in minor versions of these projects are common and not always clearly
+flagged in changelogs.
+
+Pinning creates a deliberate upgrade decision: pull the new image, read the
+migration notes, update any affected config files, and commit both together as
+a single reviewable change with the version delta noted in the commit message.
+
 ---
 
 ## Project File Structure
@@ -407,30 +444,16 @@ rebuilding the image. This honours the independent lifecycle principle.
 
 ---
 
-## Observability (Future)
+## Observability
 
-When observability is added, use OpenTelemetry (OTel). It is vendor-neutral —
-instrument once, route to any backend (Jaeger, Grafana Tempo, Honeycomb, Datadog).
+Implemented. See Decision 12 for stack rationale and Decision 13 for image
+versioning policy.
 
-FastAPI has native OTel support via `opentelemetry-instrumentation-fastapi`.
-
-Add to Docker Compose when ready:
-
-```yaml
-  otel-collector:
-    image: otel/opentelemetry-collector
-    volumes:
-      - ./config/otel-collector.yaml:/etc/otel-collector.yaml
-
-  jaeger:
-    image: jaegertracing/all-in-one
-    ports:
-      - "16686:16686"   # Jaeger UI
-```
-
-Each MCP server call, Anthropic API call, and RAG lookup becomes a traceable span.
-Latency visibility will show immediately whether slowness lives in the grammar graph
-traversal, vocabulary lookup, or the LLM response itself.
+Each MCP server call, Anthropic API call, and vocabulary/grammar lookup is a
+traceable span. Latency visibility shows immediately whether slowness lives in
+the grammar graph traversal, vocabulary lookup, or the LLM response itself.
+Prometheus metrics with trace exemplars allow jumping directly from a slow
+percentile on the Grafana dashboard into the specific trace that caused it.
 
 ---
 

@@ -55,7 +55,7 @@ services:
       - otel-collector
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.149.0
     command: ["--config=/etc/otel-collector.yaml"]
     volumes:
       - ./config/otel-collector.yaml:/etc/otel-collector.yaml
@@ -66,7 +66,7 @@ services:
       - tempo
 
   tempo:
-    image: grafana/tempo:latest
+    image: grafana/tempo:2.10.3
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./config/tempo.yaml:/etc/tempo.yaml
@@ -75,7 +75,7 @@ services:
       - "3200:3200"   # Tempo query API — Grafana reads traces here
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:3.11.1
     command:
       - --config.file=/etc/prometheus.yaml
       - --enable-feature=exemplar-storage   # required for exemplars
@@ -85,7 +85,7 @@ services:
       - "9090:9090"   # Prometheus UI
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.4.2
     ports:
       - "3000:3000"   # Grafana UI — http://localhost:3000
     environment:
@@ -107,7 +107,7 @@ services:
       - prometheus
 
   grafana-init:
-    image: curlimages/curl:latest
+    image: curlimages/curl:8.19.0
     restart: "no"
     depends_on:
       grafana:

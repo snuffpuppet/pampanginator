@@ -33,7 +33,7 @@ LLM_TOKENS_TOTAL = Counter(
 
 LLM_CALL_DURATION = Histogram(
     "kapampangan_llm_call_duration_seconds",
-    "Time spent waiting for Anthropic API response",
+    "Time spent waiting for LLM backend response",
     ["model"],
     buckets=[0.5, 1.0, 2.0, 3.0, 5.0, 7.5, 10.0, 15.0, 30.0],
 )
@@ -46,7 +46,7 @@ TOOL_CALLS_TOTAL = Counter(
 
 LLM_ERRORS_TOTAL = Counter(
     "kapampangan_llm_errors_total",
-    "Total LLM backend errors (exceptions from Anthropic or Ollama)",
+    "Total LLM backend errors",
     ["backend", "model"],
 )
 

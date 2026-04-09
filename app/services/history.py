@@ -2,7 +2,8 @@
 Conversation history management.
 
 Maintains per-session message history in memory. Each entry is a dict with
-'role' and 'content' keys, matching the Anthropic Messages API format.
+'role' and 'content' keys, matching the messages format shared by Anthropic
+and OpenAI-compatible APIs.
 
 Truncation: if a session exceeds MAX_TURNS, the oldest turns are dropped
 (keeping the most recent MAX_TURNS pairs). The system prompt is always

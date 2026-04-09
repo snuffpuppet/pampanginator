@@ -21,7 +21,7 @@ from middleware import MetricsMiddleware
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_tools("/app/config/tools.yaml")
-    llm.init()
+    llm.init("/app/config/llm.yaml")
     yield
 
 

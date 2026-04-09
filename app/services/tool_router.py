@@ -2,9 +2,9 @@
 Tool router — reads tools.yaml and dispatches tool calls to MCP servers.
 
 At startup, load_tools() is called once. The loaded tool definitions are
-passed to every Anthropic API call so Claude can decide which tools to invoke.
+passed to every LLM API call so the model can decide which tools to invoke.
 
-When Claude returns a tool_use block, dispatch() sends the parameters to the
+When the model returns a tool call, dispatch() sends the parameters to the
 appropriate MCP server and returns the result.
 """
 
@@ -30,7 +30,6 @@ def load_tools(config_path: str = "/app/config/tools.yaml") -> None:
 
     _tools = []
     for tool in config.get("tools", []):
-        # Convert to Anthropic tool definition format
         properties = {}
         required = []
         for param in tool.get("parameters", []):
@@ -44,7 +43,7 @@ def load_tools(config_path: str = "/app/config/tools.yaml") -> None:
         _tools.append({
             "name": tool["name"],
             "description": tool["description"],
-            "input_schema": {
+            "input_schema": {   # stored in Anthropic format; converted on demand by get_tool_definitions()
                 "type": "object",
                 "properties": properties,
                 "required": required,
@@ -55,8 +54,25 @@ def load_tools(config_path: str = "/app/config/tools.yaml") -> None:
         })
 
 
-def get_tool_definitions() -> list[dict]:
-    """Return tool definitions in Anthropic API format (no internal fields)."""
+def get_tool_definitions(format: str = "anthropic") -> list[dict]:
+    """Return tool definitions in the requested API format.
+
+    format="anthropic" — Anthropic tool schema (input_schema key)
+    format="openai"    — OpenAI function calling schema (parameters key,
+                         wrapped in {type: function, function: {...}})
+    """
+    if format == "openai":
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["input_schema"],
+                },
+            }
+            for tool in _tools
+        ]
     return [
         {k: v for k, v in tool.items() if not k.startswith("_")}
         for tool in _tools

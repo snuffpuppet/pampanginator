@@ -114,7 +114,7 @@ The **Kapampangan Tutor** dashboard provides:
 
 - **Request rate and error rate** across all three services
 - **p50 / p99 latency** for end-to-end requests
-- **LLM call duration** — time waiting for the Anthropic API, broken down by model
+- **LLM call duration** — time waiting for the LLM backend, broken down by model
 - **Token consumption** — input and output tokens per minute
 - **Tool call rate** — how often vocabulary vs grammar lookups are triggered
 - **Vocabulary hit/miss rate** — found vs not\_found, useful for identifying vocabulary gaps
@@ -130,7 +130,7 @@ Traces are stored in Tempo and accessible via the Grafana Explore view:
 1. Open `http://localhost:3000`
 2. Go to **Explore** → select the **Tempo** datasource
 3. Search by service: `kapampangan-app`
-4. Click any trace to see the full span tree: `app → mcp-vocabulary → mcp-grammar → Anthropic API`
+4. Click any trace to see the full span tree: `app → mcp-vocabulary → mcp-grammar → LLM backend`
 
 ### Prometheus
 
@@ -195,7 +195,7 @@ The graph has no external dependencies — it is a self-contained JSON file main
 | File | Purpose |
 |---|---|
 | `config/system_prompt.md` | Ading's persona, language profile, and interaction rules |
-| `config/tools.yaml` | Tool definitions loaded into every Anthropic API call |
+| `config/tools.yaml` | Tool definitions passed to every LLM API call |
 | `config/otel-collector.yaml` | OTel collector pipeline (OTLP HTTP in → Tempo gRPC out) |
 | `config/tempo.yaml` | Tempo trace storage config |
 | `config/prometheus.yaml` | Prometheus scrape targets |
@@ -211,7 +211,7 @@ The `config/` directory is mounted into the `app` container so changes to the sy
 
 ```
 frontend/                React chat UI
-  vite.config.ts         Dev server + LLM API middleware (Anthropic & Ollama)
+  vite.config.ts         Dev server + LLM API middleware
   src/
     components/
       Chat.tsx           Main conversation interface

@@ -271,8 +271,8 @@
     {
       "id": 21,
       "type": "timeseries",
-      "title": "LLM Call Duration (Anthropic API)",
-      "description": "Time spent waiting for the Anthropic API — the dominant latency component",
+      "title": "LLM Call Duration",
+      "description": "Time spent waiting for the LLM backend — the dominant latency component",
       "gridPos": { "x": 0, "y": 22, "w": 12, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {

@@ -10,7 +10,8 @@
 
 A Kapampangan language tutor application consisting of a React frontend, a Python
 FastAPI orchestration layer, and two MCP (Model Context Protocol) servers providing
-domain knowledge to a Claude LLM via the Anthropic API.
+domain knowledge to a configurable LLM backend (Anthropic Claude or any
+OpenAI-compatible model via Ollama).
 
 The system is designed around three principles:
 - **Thin code, rich data** — logic lives in config and data, not in algorithms
@@ -49,8 +50,8 @@ The system is designed around three principles:
 └─────────────────────────────────────────────────────────┘
                           │
                           ▼
-                  Anthropic Claude API
-                  (stateless LLM calls)
+                  LLM Backend
+                  (Anthropic / Ollama — stateless calls)
 ```
 
 ---
@@ -91,10 +92,11 @@ Responsibilities:
 
 ## Key Design Decisions
 
-### Decision 1 — Config over code for tool routing
+### Decision 1 — Config over code for tool routing and LLM backend selection
 
-Tool definitions and routing logic live in a YAML file, not in Python. Adding a new
-MCP tool means editing config, not code.
+Tool definitions, routing logic, and LLM backend capabilities live in YAML files,
+not in Python. Adding a new MCP tool or switching LLM backends means editing config,
+not code.
 
 File: `config/tools.yaml`
 
@@ -125,12 +127,39 @@ tools:
         description: "aspect_of | focus_type | related_form | derived_noun"
 ```
 
-The orchestration layer reads this file at startup and passes the tool definitions
-to the LLM API call. Claude then decides which tools to call based on the query.
+The orchestration layer reads `tools.yaml` at startup and passes tool definitions
+to the LLM. The model then decides which tools to call based on the query.
+
+The same principle applies to the LLM backend itself. Backend selection, model name,
+token limits, and whether tool calling is enabled are declared in `config/llm.yaml`,
+not in code:
+
+```yaml
+active_backend: anthropic   # overridden by BACKEND env var
+
+backends:
+  anthropic:
+    api_type: anthropic
+    model: claude-sonnet-4-6
+    max_tokens: 1024
+    tools_enabled: true
+
+  ollama:
+    api_type: openai_compatible
+    base_url: http://host.docker.internal:11434
+    model: llama3.2
+    max_tokens: 1024
+    tools_enabled: true
+```
+
+Switching backends, swapping models, or disabling tool calls for a model that does
+not support them is a config edit and container restart — no code change. Adding a
+new backend (e.g. a hosted OpenAI-compatible endpoint) means adding a config block
+and, if the API wire format differs, a thin adapter in `llm.py`.
 
 ### Decision 2 — LLM is stateless, state is managed by the orchestration layer
 
-Every Anthropic API call is stateless. The conversation history is maintained by the
+Every LLM API call is stateless. The conversation history is maintained by the
 FastAPI app and sent with every call. The app is responsible for:
 - Storing the message history per session
 - Truncating or summarising history when it approaches the context window limit
@@ -217,10 +246,11 @@ Docker Compose automatically merges `docker-compose.yml` with
   baked-in source with the live working directory. All three services run with
   `--reload` so Python changes also propagate without restart.
 
-The Vite dev server middleware handles `/api/chat`, `/api/chat/anthropic`, and
-`/api/chat/ollama` — this is the LLM communication layer in dev mode. Ollama, if
-used, runs on the host and is reached from the frontend container via
-`host.docker.internal`.
+In dev mode, `/api/chat` is served by the FastAPI `app` container — the same code
+path as production. The Vite dev server proxies to it. The Compare page's
+`/api/chat/anthropic` and `/api/chat/ollama` endpoints are implemented as convenience
+routes in the Vite middleware for direct per-backend comparison; they do not go
+through the FastAPI agentic loop.
 
 **Prod mode** — `docker compose -f docker-compose.yml up`
 
@@ -228,11 +258,6 @@ Passing `-f docker-compose.yml` explicitly skips the override file. The `app`
 Dockerfile uses a multi-stage build: a Node.js stage compiles the frontend source
 into static files, which are copied into the Python runtime stage. No source mounts,
 no Vite dev server. The app container serves the built static files from `/app/frontend`.
-
-The `/api/chat` streaming endpoints (backend selection, Anthropic/Ollama dispatch,
-SSE response format) must be implemented in FastAPI for prod mode to have a working
-LLM path. This is a known open item — until that work is done, prod mode does not
-have end-to-end LLM communication.
 
 ### Decision 12 — Observability stack: Grafana + Tempo + Prometheus
 
@@ -281,17 +306,25 @@ kapampangan-tutor/
 ├── docker-compose.yml              # Service definitions
 │
 ├── config/
+│   ├── llm.yaml                    # LLM backend selection and capabilities (declarative)
 │   ├── tools.yaml                  # MCP tool definitions and routing (declarative)
-│   └── system_prompt.md            # LLM system prompt (persona + interaction rules)
+│   ├── system_prompt.md            # LLM system prompt (persona + interaction rules)
+│   ├── otel-collector.yaml         # OTel collector pipeline config
+│   ├── tempo.yaml                  # Tempo trace storage config
+│   ├── prometheus.yaml             # Prometheus scrape targets
+│   └── dashboard/                  # Grafana provisioning and dashboard JSON
 │
 ├── app/                            # Container 1 — Orchestration + Frontend
 │   ├── Dockerfile
 │   ├── main.py                     # FastAPI app entry point
+│   ├── telemetry.py                # OTel tracing init
+│   ├── metrics.py                  # Prometheus metric definitions
+│   ├── middleware.py               # Request duration/count middleware
 │   ├── routes/
 │   │   ├── chat.py                 # /chat endpoint — handles conversation turns
 │   │   └── health.py               # /health endpoint
 │   ├── services/
-│   │   ├── llm.py                  # Anthropic API call assembly and execution
+│   │   ├── llm.py                  # Agentic loop — reads llm.yaml, dispatches to configured backend
 │   │   ├── tool_router.py          # Reads tools.yaml, routes tool calls to MCP servers
 │   │   └── history.py              # Conversation history management
 │   ├── models/
@@ -413,7 +446,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - BACKEND=${BACKEND:-anthropic}           # selects active backend; overrides llm.yaml
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001
       - GRAMMAR_SERVICE_URL=http://mcp-grammar:8002
     volumes:
@@ -438,7 +474,7 @@ services:
 ```
 
 Key design choice: config and data directories are **mounted as volumes**, not baked
-into the container image. This means the system prompt, tool config, vocabulary JSON,
+into the container image. This means the LLM backend config, system prompt, tool config, vocabulary JSON,
 and grammar graph can all be edited and take effect on container restart — without
 rebuilding the image. This honours the independent lifecycle principle.
 
@@ -449,7 +485,7 @@ rebuilding the image. This honours the independent lifecycle principle.
 Implemented. See Decision 12 for stack rationale and Decision 13 for image
 versioning policy.
 
-Each MCP server call, Anthropic API call, and vocabulary/grammar lookup is a
+Each MCP server call, LLM backend call, and vocabulary/grammar lookup is a
 traceable span. Latency visibility shows immediately whether slowness lives in
 the grammar graph traversal, vocabulary lookup, or the LLM response itself.
 Prometheus metrics with trace exemplars allow jumping directly from a slow
@@ -660,7 +696,7 @@ change is predictable before you open a file.
 The same OpenTelemetry instrumentation used in the backend can be extended to
 the browser via `@opentelemetry/sdk-web`. A single user interaction then
 produces one complete trace from button click → FastAPI → MCP server →
-Anthropic API → response rendered. End-to-end latency is visible in one view.
+LLM backend → response rendered. End-to-end latency is visible in one view.
 
 ---
 
@@ -671,7 +707,7 @@ Suggested implementation sequence:
 1. Scaffold Docker Compose with three empty service containers
 2. Build MCP Vocabulary Server — load JSON, expose `/lookup` endpoint, write Pydantic schemas
 3. Build MCP Grammar Graph Server — load graph JSON, expose `/traverse` endpoint
-4. Build FastAPI orchestration layer — read `tools.yaml`, assemble Anthropic API calls, route tool results
+4. Build FastAPI orchestration layer — read `tools.yaml` and `llm.yaml`, assemble LLM API calls, route tool results
 5. Connect conversation history management
 6. Scaffold React frontend — create layer structure: `store/`, `services/`, `components/`
 7. Implement `api.js` service layer — single fetch call to `/chat`

@@ -39,8 +39,8 @@ async def chat(request: ChatRequest):
                 yield f"data: {json.dumps({'text': response_text})}\n\n"
             except Exception as e:
                 LLM_ERRORS_TOTAL.labels(
-                    backend=llm.BACKEND,
-                    model=llm.OLLAMA_MODEL if llm.BACKEND == "ollama" else llm.MODEL,
+                    backend=llm.ACTIVE_BACKEND,
+                    model=llm.ACTIVE_MODEL,
                 ).inc()
                 yield f"data: {json.dumps({'text': f'Error: {e}'})}\n\n"
             finally:

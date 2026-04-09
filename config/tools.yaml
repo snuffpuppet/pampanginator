@@ -2,9 +2,14 @@ tools:
 
   - name: vocabulary_lookup
     description: >
-      Look up a Kapampangan word or phrase in the authoritative kaikki.org / Wiktionary
-      vocabulary index. Returns definition, part of speech, IPA pronunciation, aspect
-      forms, example sentences, and etymology where available.
+      Look up a Kapampangan word or English concept in the kaikki.org / Wiktionary
+      vocabulary index. Use this when the learner asks what a word means, how to say
+      something in Kapampangan, or asks about a specific word's pronunciation,
+      definition, or usage. Returns definition, part of speech, IPA pronunciation,
+      aspect forms, example sentences, and etymology where available.
+      Pass the Kapampangan word directly (e.g. 'mangan') or an English concept
+      (e.g. 'eat', 'write'). Do NOT use this for grammar rules, verb conjugation
+      patterns, or sentence structure — use grammar_lookup for those.
     endpoint: http://mcp-vocabulary:8001/lookup
     method: POST
     timeout_seconds: 10
@@ -12,7 +17,7 @@ tools:
       - name: term
         type: string
         required: true
-        description: "The Kapampangan or English word/phrase to look up"
+        description: "The Kapampangan word or English word/concept to look up (e.g. 'mangan', 'eat', 'write')"
       - name: type
         type: string
         required: false
@@ -24,12 +29,18 @@ tools:
 
   - name: grammar_lookup
     description: >
-      Query the Kapampangan grammar knowledge graph. Use this for any grammar question:
-      verb aspects and conjugation, verb focus types (actor/object/goal/locative/circumstantial),
-      pronouns (absolutive and ergative sets), case markers, demonstratives, particles,
-      negation, ligature, and existential constructions. Pass a verb root (e.g. 'mangan'),
-      a grammar concept id (e.g. 'actor_focus', 'particles', 'demonstratives',
-      'absolutive_pronouns', 'case_system'), or any grammar term the learner mentions.
+      Query the Kapampangan grammar knowledge graph for grammatical rules and
+      structures. Use this ONLY for grammatical concepts — verb aspect forms
+      (progressive/completed/contemplated), verb focus types
+      (actor/object/goal/locative/circumstantial), pronouns, case markers,
+      particles, demonstratives, and word order rules.
+      Do NOT call this for individual words or vocabulary — use vocabulary_lookup instead.
+      Valid root values are Kapampangan verb roots (e.g. 'mangan', 'sulat', 'basa')
+      or grammar concept IDs: actor_focus, object_focus, goal_focus, locative_focus,
+      circumstantial_focus, progressive_aspect, completed_aspect, contemplated_aspect,
+      case_system, absolutive_case, ergative_case, oblique_case,
+      absolutive_pronouns, ergative_pronouns, portmanteau_pronouns,
+      particles, demonstratives, vso_word_order, verb_focus_system.
     endpoint: http://mcp-grammar:8002/traverse
     method: POST
     timeout_seconds: 10
@@ -37,7 +48,7 @@ tools:
       - name: root
         type: string
         required: true
-        description: "Verb root or grammar concept node id (e.g. 'mangan', 'actor_focus', 'particles', 'demonstratives')"
+        description: "A Kapampangan verb root (e.g. 'mangan') or a grammar concept ID from the list above"
       - name: relationship
         type: string
         required: false

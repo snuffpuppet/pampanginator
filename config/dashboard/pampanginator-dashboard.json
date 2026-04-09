@@ -426,7 +426,11 @@
       "description": "Live trace list. Click any trace to inspect the full span tree.",
       "gridPos": { "x": 0, "y": 46, "w": 24, "h": 10 },
       "datasource": { "type": "tempo", "uid": "tempo" },
+      "options": {
+        "tableType": "traces"
+      },
       "targets": [{
+        "refId": "A",
         "datasource": { "type": "tempo", "uid": "tempo" },
         "queryType": "traceql",
         "query": "{ resource.service.name = \"kapampangan-app\" }",

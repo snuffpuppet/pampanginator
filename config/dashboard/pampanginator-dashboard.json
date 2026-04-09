@@ -52,8 +52,8 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Error Rate",
-      "description": "Percentage of requests returning 4xx or 5xx status",
+      "title": "Error Count (5m)",
+      "description": "Number of 4xx/5xx responses in the last 5 minutes — turns red on any single error",
       "gridPos": { "x": 6, "y": 1, "w": 6, "h": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "options": {
@@ -62,21 +62,50 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
+          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.01 },
-              { "color": "red", "value": 0.05 }
+              { "color": "red", "value": 1 }
             ]
           }
         }
       },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sum(rate(kapampangan_requests_total{status_code=~\"[45]..\"}[5m])) / sum(rate(kapampangan_requests_total[5m]))",
-        "legendFormat": "error rate"
+        "expr": "sum(increase(kapampangan_requests_total{status_code=~\"[45]..\"}[5m]))",
+        "legendFormat": "errors"
+      }]
+    },
+
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "LLM Errors",
+      "description": "Errors from the LLM backend (Anthropic or Ollama) — these return HTTP 200 so they are invisible to the HTTP error rate panel",
+      "gridPos": { "x": 0, "y": 5, "w": 4, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": {
+        "colorMode": "background",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "sum(increase(kapampangan_llm_errors_total[5m]))",
+        "legendFormat": "LLM errors"
       }]
     },
 
@@ -85,7 +114,7 @@
       "type": "timeseries",
       "title": "Errors by Status Code",
       "description": "Rate of 4xx and 5xx responses — 4xx often indicate route mismatches or bad requests; 5xx indicate server errors",
-      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 6 },
+      "gridPos": { "x": 4, "y": 5, "w": 20, "h": 6 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {

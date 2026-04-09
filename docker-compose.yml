@@ -9,7 +9,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - BACKEND=${BACKEND:-anthropic}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001
       - GRAMMAR_SERVICE_URL=http://mcp-grammar:8002
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
@@ -67,7 +70,10 @@ services:
 
   tempo:
     image: grafana/tempo:2.10.3
-    command: ["-config.file=/etc/tempo.yaml"]
+    command:
+      - "-config.file=/etc/tempo.yaml"
+      - "-target=scalable-single-binary"   # avoids Kafka-based write path default in 2.7+
+      - "-querier.frontend-address=127.0.0.1:9095"  # querier connects to frontend on same process
     volumes:
       - ./config/tempo.yaml:/etc/tempo.yaml
       - tempo-data:/var/tempo
@@ -75,10 +81,11 @@ services:
       - "3200:3200"   # Tempo query API — Grafana reads traces here
 
   prometheus:
-    image: prom/prometheus:3.11.1
+    image: prom/prometheus@sha256:759ea6db49103737f2a6f420b0d1632062d8ad99dec086c76db605fd0bf23e15
     command:
       - --config.file=/etc/prometheus.yaml
-      - --enable-feature=exemplar-storage   # required for exemplars
+      - --enable-feature=exemplar-storage        # required for exemplars
+      - --web.enable-remote-write-receiver       # required for Tempo metrics generator
     volumes:
       - ./config/prometheus.yaml:/etc/prometheus.yaml
     ports:

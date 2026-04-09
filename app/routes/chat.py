@@ -1,49 +1,55 @@
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
 import json
+import uuid
 
-from models.schemas import ChatRequest, ChatResponse
-from services import history, llm
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from opentelemetry import trace
+from opentelemetry import context as otel_context
+
+from models.schemas import ChatRequest
+from services import llm
+from metrics import LLM_ERRORS_TOTAL
 
 router = APIRouter()
 
+tracer = trace.get_tracer(__name__)
 
-@router.post("/chat", response_model=ChatResponse)
+
+@router.post("/chat")
 async def chat(request: ChatRequest):
     """
-    Handle one conversation turn.
+    Receive a full message history from the frontend and stream the assistant
+    response back as SSE.
 
-    Retrieves session history, appends the new user message, calls the LLM
-    (which may trigger tool calls), appends the assistant response, and returns.
+    The span context is captured here, while the HTTP request span is still
+    open, and propagated into the generator so that LLM child spans are
+    correctly attached to this request's trace rather than becoming orphans.
     """
-    session_id = request.session_id
-    user_message = request.message
+    session_id = request.session_id or str(uuid.uuid4())
+    messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
-    # Append user message to history
-    history.append(session_id, "user", user_message)
+    # Capture context now — the HTTP request span closes when we return
+    # StreamingResponse, before the generator runs.
+    ctx = otel_context.get_current()
 
-    # Build message list for this API call
-    messages = history.get_history(session_id)
+    async def stream():
+        with tracer.start_as_current_span("chat.stream", context=ctx):
+            try:
+                response_text, _ = await llm.complete(messages, session_id=session_id)
+                yield f"data: {json.dumps({'text': response_text})}\n\n"
+            except Exception as e:
+                LLM_ERRORS_TOTAL.labels(
+                    backend=llm.BACKEND,
+                    model=llm.OLLAMA_MODEL if llm.BACKEND == "ollama" else llm.MODEL,
+                ).inc()
+                yield f"data: {json.dumps({'text': f'Error: {e}'})}\n\n"
+            finally:
+                yield "data: [DONE]\n\n"
 
-    try:
-        response_text, tools_used = await llm.complete(messages, session_id=session_id)
-    except Exception as e:
-        # Remove the user message we just appended so history stays consistent
-        history.clear(session_id)
-        raise HTTPException(status_code=500, detail=str(e))
-
-    # Append assistant response to history
-    history.append(session_id, "assistant", response_text)
-
-    return ChatResponse(
-        response=response_text,
-        tools_used=tools_used,
-        session_id=session_id,
-    )
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @router.delete("/chat/{session_id}")
 async def clear_session(session_id: str):
-    """Clear the conversation history for a session."""
-    history.clear(session_id)
+    """No-op kept for API compatibility — history is owned by the frontend."""
     return {"session_id": session_id, "cleared": True}

@@ -12,6 +12,7 @@ import os
 import time
 from pathlib import Path
 import anthropic
+import httpx
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 
@@ -22,6 +23,10 @@ MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 1024
 SYSTEM_PROMPT_PATH = "/app/config/system_prompt.md"
 
+BACKEND = os.getenv("BACKEND", "anthropic")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+
 _client: anthropic.AsyncAnthropic | None = None
 _system_prompt: str | None = None
 
@@ -31,8 +36,36 @@ tracer = trace.get_tracer(__name__)
 def init(system_prompt_path: str = SYSTEM_PROMPT_PATH) -> None:
     """Initialise the Anthropic client and load the system prompt. Call once at startup."""
     global _client, _system_prompt
-    _client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    if BACKEND == "anthropic":
+        _client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     _system_prompt = Path(system_prompt_path).read_text(encoding="utf-8")
+
+
+async def _complete_ollama(messages: list[dict], session_id: str) -> tuple[str, list[str]]:
+    """Send messages to Ollama via its OpenAI-compatible endpoint."""
+    with tracer.start_as_current_span("llm.call_ollama") as span:
+        span.set_attribute("llm.model", OLLAMA_MODEL)
+        span.set_attribute("kapampangan.session_id", session_id)
+        t0 = time.time()
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"{OLLAMA_URL}/v1/chat/completions",
+                    json={
+                        "model": OLLAMA_MODEL,
+                        "messages": [{"role": "system", "content": _system_prompt}] + messages,
+                        "stream": False,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                text = data["choices"][0]["message"]["content"]
+        except Exception as e:
+            span.set_status(StatusCode.ERROR, str(e))
+            span.record_exception(e)
+            raise
+        span.set_attribute("llm.duration_seconds", time.time() - t0)
+        return text, []
 
 
 async def complete(messages: list[dict], session_id: str = "") -> tuple[str, list[str]]:
@@ -43,6 +76,9 @@ async def complete(messages: list[dict], session_id: str = "") -> tuple[str, lis
     Implements the agentic loop: Claude may request tool calls, we execute
     them, return results, and Claude produces a final text response.
     """
+    if BACKEND == "ollama":
+        return await _complete_ollama(messages, session_id)
+
     client = _client
     system_prompt = _system_prompt
     tool_definitions = get_tool_definitions()

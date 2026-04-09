@@ -44,6 +44,12 @@ TOOL_CALLS_TOTAL = Counter(
     ["tool_name"],
 )
 
+LLM_ERRORS_TOTAL = Counter(
+    "kapampangan_llm_errors_total",
+    "Total LLM backend errors (exceptions from Anthropic or Ollama)",
+    ["backend", "model"],
+)
+
 
 def metrics_endpoint(request: Request) -> Response:
     """Expose metrics in OpenMetrics format. Must use openmetrics.exposition."""

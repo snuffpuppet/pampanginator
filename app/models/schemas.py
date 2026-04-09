@@ -8,14 +8,8 @@ class Message(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    session_id: str
-    message: str
-
-
-class ChatResponse(BaseModel):
-    response: str
-    tools_used: list[str]
-    session_id: str
+    messages: list[Message]
+    session_id: str = ""
 
 
 class ToolCall(BaseModel):

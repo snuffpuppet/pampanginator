@@ -12,3 +12,5 @@ When building or modifying MCP servers, read:
 - mcp-builder: consult when building or modifying MCP servers
 - frontend-design: consult when building or modifying React components
 - architecture-compliance: consult before any structural change
+- otel-instrumentation: instrument the code for tracing
+- otel-metrics: Ensure code coverage with metrics 

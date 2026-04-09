@@ -200,6 +200,40 @@ The React frontend is built and served as static files by the FastAPI app contai
 (or via nginx in the same container). No separate container for the frontend in
 production.
 
+### Decision 11 — Two-mode operation: live reload in dev, container rebuild in prod
+
+The system has two operating modes. Both are fully containerised — Node.js is not
+required on the host in either mode.
+
+**Dev mode** — `docker compose up` (no flags required)
+
+Docker Compose automatically merges `docker-compose.yml` with
+`docker-compose.override.yml` when no `-f` flag is given. The override file adds:
+
+- A `frontend` container running the Vite dev server on port 5173, with the
+  `frontend/` source directory mounted. Vite HMR picks up file changes instantly
+  with no restart required.
+- Volume mounts on `app`, `mcp-vocabulary`, and `mcp-grammar` that overlay the
+  baked-in source with the live working directory. All three services run with
+  `--reload` so Python changes also propagate without restart.
+
+The Vite dev server middleware handles `/api/chat`, `/api/chat/anthropic`, and
+`/api/chat/ollama` — this is the LLM communication layer in dev mode. Ollama, if
+used, runs on the host and is reached from the frontend container via
+`host.docker.internal`.
+
+**Prod mode** — `docker compose -f docker-compose.yml up`
+
+Passing `-f docker-compose.yml` explicitly skips the override file. The `app`
+Dockerfile uses a multi-stage build: a Node.js stage compiles the frontend source
+into static files, which are copied into the Python runtime stage. No source mounts,
+no Vite dev server. The app container serves the built static files from `/app/frontend`.
+
+The `/api/chat` streaming endpoints (backend selection, Anthropic/Ollama dispatch,
+SSE response format) must be implemented in FastAPI for prod mode to have a working
+LLM path. This is a known open item — until that work is done, prod mode does not
+have end-to-end LLM communication.
+
 ---
 
 ## Project File Structure

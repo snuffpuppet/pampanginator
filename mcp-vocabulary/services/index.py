@@ -12,10 +12,13 @@ scripts/fetch-kaikki.mjs in the frontend source tree.
 
 import json
 import re
+import time
 from pathlib import Path
 from typing import Optional
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
+
+from metrics import VOCABULARY_LOOKUPS_TOTAL, VOCABULARY_LOOKUP_DURATION
 
 tracer = trace.get_tracer(__name__)
 
@@ -72,9 +75,20 @@ def lookup(term: str, limit: int = 6) -> list[dict]:
         span.set_attribute("kapampangan.term", term)
         span.set_attribute("kapampangan.limit", limit)
         try:
+            t0 = time.time()
             results = _lookup(term, limit)
+            duration = time.time() - t0
+
             span.set_attribute("kapampangan.result_found", len(results) > 0)
             span.set_attribute("kapampangan.result_count", len(results))
+
+            ctx = span.get_span_context()
+            exemplar = {"TraceID": trace.format_trace_id(ctx.trace_id)} if ctx.is_valid else None
+            VOCABULARY_LOOKUP_DURATION.observe(duration, exemplar=exemplar)
+            VOCABULARY_LOOKUPS_TOTAL.labels(
+                result="found" if results else "not_found"
+            ).inc(exemplar=exemplar)
+
             return results
         except Exception as e:
             span.set_status(StatusCode.ERROR, str(e))

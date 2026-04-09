@@ -9,12 +9,14 @@ Each call is stateless from the LLM's perspective. This service:
 """
 
 import os
+import time
 from pathlib import Path
 import anthropic
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 
 from .tool_router import get_tool_definitions, dispatch
+from metrics import LLM_TOKENS_TOTAL, LLM_CALL_DURATION
 
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 1024
@@ -55,6 +57,7 @@ async def complete(messages: list[dict], session_id: str = "") -> tuple[str, lis
                 with tracer.start_as_current_span("llm.call_anthropic") as llm_span:
                     llm_span.set_attribute("llm.model", MODEL)
                     llm_span.set_attribute("llm.max_tokens", MAX_TOKENS)
+                    t0 = time.time()
                     try:
                         response = await client.messages.create(
                             model=MODEL,
@@ -68,9 +71,20 @@ async def complete(messages: list[dict], session_id: str = "") -> tuple[str, lis
                         llm_span.record_exception(e)
                         raise
 
+                    llm_duration = time.time() - t0
                     llm_span.set_attribute("llm.input_tokens", response.usage.input_tokens)
                     llm_span.set_attribute("llm.output_tokens", response.usage.output_tokens)
                     llm_span.set_attribute("llm.stop_reason", response.stop_reason)
+
+                    ctx = llm_span.get_span_context()
+                    exemplar = {"TraceID": trace.format_trace_id(ctx.trace_id)} if ctx.is_valid else None
+                    LLM_CALL_DURATION.labels(model=MODEL).observe(llm_duration, exemplar=exemplar)
+                    LLM_TOKENS_TOTAL.labels(direction="input", model=MODEL).inc(
+                        response.usage.input_tokens, exemplar=exemplar
+                    )
+                    LLM_TOKENS_TOTAL.labels(direction="output", model=MODEL).inc(
+                        response.usage.output_tokens, exemplar=exemplar
+                    )
 
                 if response.stop_reason == "end_turn":
                     text = "".join(

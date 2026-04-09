@@ -3,7 +3,9 @@ version: "3.9"
 services:
 
   app:
-    build: ./app
+    build:
+      context: .
+      dockerfile: app/Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -12,6 +14,7 @@ services:
       - GRAMMAR_SERVICE_URL=http://mcp-grammar:8002
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=kapampangan-app
+      - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
     volumes:
@@ -28,6 +31,7 @@ services:
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=kapampangan-mcp-vocabulary
+      - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
     volumes:
@@ -42,6 +46,7 @@ services:
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=kapampangan-mcp-grammar
+      - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
     volumes:
@@ -58,10 +63,42 @@ services:
       - "4318:4318"   # OTLP HTTP receiver — services send spans here
       - "8888:8888"   # Collector self-metrics (optional)
     depends_on:
-      - jaeger
+      - tempo
 
-  jaeger:
-    image: jaegertracing/all-in-one:latest
+  tempo:
+    image: grafana/tempo:latest
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./config/tempo.yaml:/etc/tempo.yaml
+      - tempo-data:/var/tempo
     ports:
-      - "16686:16686"   # Jaeger UI — http://localhost:16686
-      - "4317:4317"     # OTLP gRPC receiver — collector forwards spans here
+      - "3200:3200"   # Tempo query API — Grafana reads traces here
+
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - --config.file=/etc/prometheus.yaml
+      - --enable-feature=exemplar-storage   # required for exemplars
+    volumes:
+      - ./config/prometheus.yaml:/etc/prometheus.yaml
+    ports:
+      - "9090:9090"   # Prometheus UI
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"   # Grafana UI — http://localhost:3000
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./config/dashboard/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./config/dashboard/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
+      - ./config/dashboard:/var/lib/grafana/dashboards
+    depends_on:
+      - tempo
+      - prometheus
+
+volumes:
+  tempo-data:

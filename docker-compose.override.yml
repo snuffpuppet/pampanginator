@@ -1,0 +1,44 @@
+version: "3.9"
+
+# Dev mode overrides — merged automatically when you run `docker compose up`.
+# For prod, run: docker compose -f docker-compose.yml up
+
+services:
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules   # named volume prevents host override
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    environment:
+      - BACKEND=${BACKEND:-anthropic}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+    depends_on:
+      - app
+
+  app:
+    volumes:
+      - ./app:/app
+      - ./config:/app/config   # more specific path wins — config stays mounted
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  mcp-vocabulary:
+    volumes:
+      - ./mcp-vocabulary:/app
+      - ./mcp-vocabulary/data:/app/data
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+
+  mcp-grammar:
+    volumes:
+      - ./mcp-grammar:/app
+      - ./mcp-grammar/data:/app/data
+    command: uvicorn main:app --host 0.0.0.0 --port 8002 --reload
+
+volumes:
+  frontend-node-modules:

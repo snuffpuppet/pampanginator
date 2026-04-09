@@ -15,6 +15,8 @@ from pathlib import Path
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 
+from metrics import TOOL_CALLS_TOTAL
+
 tracer = trace.get_tracer(__name__)
 
 
@@ -79,6 +81,7 @@ async def dispatch(tool_name: str, parameters: dict, session_id: str = "") -> di
         span.set_attribute("tool.name", tool_name)
         span.set_attribute("tool.endpoint", endpoint)
         span.set_attribute("kapampangan.session_id", session_id)
+        TOOL_CALLS_TOTAL.labels(tool_name=tool_name).inc()
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.request(method, endpoint, json=parameters)

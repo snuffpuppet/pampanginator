@@ -12,10 +12,13 @@ Traversal patterns:
 """
 
 import json
+import time
 from pathlib import Path
 from typing import Optional
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
+
+from metrics import GRAMMAR_TRAVERSALS_TOTAL, GRAMMAR_TRAVERSAL_DURATION
 
 tracer = trace.get_tracer(__name__)
 
@@ -51,12 +54,24 @@ def traverse(root: str, relationship: Optional[str] = None) -> dict:
 
     Returns a dict with the root node, relationship, and matching results.
     """
+    rel_label = relationship or "all"
     with tracer.start_as_current_span("grammar.traverse") as span:
         span.set_attribute("kapampangan.root", root)
-        span.set_attribute("kapampangan.relationship", relationship or "all")
+        span.set_attribute("kapampangan.relationship", rel_label)
         try:
+            t0 = time.time()
             result = _traverse(root, relationship)
+            duration = time.time() - t0
+
             span.set_attribute("kapampangan.result_count", len(result.get("results", [])))
+
+            ctx = span.get_span_context()
+            exemplar = {"TraceID": trace.format_trace_id(ctx.trace_id)} if ctx.is_valid else None
+            GRAMMAR_TRAVERSAL_DURATION.labels(relationship=rel_label).observe(
+                duration, exemplar=exemplar
+            )
+            GRAMMAR_TRAVERSALS_TOTAL.labels(relationship=rel_label).inc(exemplar=exemplar)
+
             return result
         except Exception as e:
             span.set_status(StatusCode.ERROR, str(e))

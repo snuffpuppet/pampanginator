@@ -3,6 +3,7 @@
   "uid": "kapampangan-main",
   "schemaVersion": 38,
   "version": 1,
+  "orgId": 1,
   "refresh": "30s",
   "time": { "from": "now-1h", "to": "now" },
   "tags": ["kapampangan", "observability"],
@@ -52,7 +53,7 @@
       "id": 3,
       "type": "stat",
       "title": "Error Rate",
-      "description": "Percentage of requests returning 5xx status",
+      "description": "Percentage of requests returning 4xx or 5xx status",
       "gridPos": { "x": 6, "y": 1, "w": 6, "h": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "options": {
@@ -74,9 +75,49 @@
       },
       "targets": [{
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "expr": "sum(rate(kapampangan_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(kapampangan_requests_total[5m]))",
+        "expr": "sum(rate(kapampangan_requests_total{status_code=~\"[45]..\"}[5m])) / sum(rate(kapampangan_requests_total[5m]))",
         "legendFormat": "error rate"
       }]
+    },
+
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Errors by Status Code",
+      "description": "Rate of 4xx and 5xx responses — 4xx often indicate route mismatches or bad requests; 5xx indicate server errors",
+      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2, "fillOpacity": 15 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "4xx" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "5xx" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "4xx",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (endpoint, status_code) (rate(kapampangan_requests_total{status_code=~\"4..\"}[1m]))",
+          "legendFormat": "{{status_code}} {{endpoint}}"
+        },
+        {
+          "refId": "5xx",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (endpoint, status_code) (rate(kapampangan_requests_total{status_code=~\"5..\"}[1m]))",
+          "legendFormat": "{{status_code}} {{endpoint}}"
+        }
+      ]
     },
 
     {
@@ -145,7 +186,7 @@
       "id": 10,
       "type": "row",
       "title": "Request Latency — click exemplar dots to open traces in Tempo",
-      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 },
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 1 },
       "collapsed": false
     },
 
@@ -154,7 +195,7 @@
       "type": "timeseries",
       "title": "End-to-End Request Duration (with trace exemplars)",
       "description": "Click any dot on the chart to open the associated trace in Tempo",
-      "gridPos": { "x": 0, "y": 6, "w": 24, "h": 8 },
+      "gridPos": { "x": 0, "y": 13, "w": 24, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "options": {
         "tooltip": { "mode": "multi" }
@@ -194,7 +235,7 @@
       "id": 20,
       "type": "row",
       "title": "Latency Breakdown by Stage",
-      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 1 },
+      "gridPos": { "x": 0, "y": 21, "w": 24, "h": 1 },
       "collapsed": false
     },
 
@@ -203,7 +244,7 @@
       "type": "timeseries",
       "title": "LLM Call Duration (Anthropic API)",
       "description": "Time spent waiting for the Anthropic API — the dominant latency component",
-      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 7 },
+      "gridPos": { "x": 0, "y": 22, "w": 12, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": { "unit": "s" }
@@ -229,7 +270,7 @@
       "type": "timeseries",
       "title": "MCP Server Call Duration",
       "description": "Vocabulary and grammar server response times",
-      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 7 },
+      "gridPos": { "x": 12, "y": 22, "w": 12, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": { "unit": "s" }
@@ -254,7 +295,7 @@
       "id": 30,
       "type": "row",
       "title": "LLM Usage",
-      "gridPos": { "x": 0, "y": 22, "w": 24, "h": 1 },
+      "gridPos": { "x": 0, "y": 29, "w": 24, "h": 1 },
       "collapsed": false
     },
 
@@ -263,7 +304,7 @@
       "type": "timeseries",
       "title": "Token Consumption Rate",
       "description": "Input and output tokens per minute — use to track prompt growth and cost",
-      "gridPos": { "x": 0, "y": 23, "w": 12, "h": 7 },
+      "gridPos": { "x": 0, "y": 30, "w": 12, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": { "unit": "short" }
@@ -287,7 +328,7 @@
       "type": "timeseries",
       "title": "Tool Call Rate by Tool",
       "description": "How often the agent is using vocabulary vs grammar lookups",
-      "gridPos": { "x": 12, "y": 23, "w": 12, "h": 7 },
+      "gridPos": { "x": 12, "y": 30, "w": 12, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": { "unit": "short" }
@@ -303,7 +344,7 @@
       "id": 40,
       "type": "row",
       "title": "MCP Server Intelligence",
-      "gridPos": { "x": 0, "y": 30, "w": 24, "h": 1 },
+      "gridPos": { "x": 0, "y": 37, "w": 24, "h": 1 },
       "collapsed": false
     },
 
@@ -312,7 +353,7 @@
       "type": "timeseries",
       "title": "Vocabulary Lookup Results",
       "description": "Found vs not-found rate — high not_found may indicate vocabulary gaps",
-      "gridPos": { "x": 0, "y": 31, "w": 12, "h": 7 },
+      "gridPos": { "x": 0, "y": 38, "w": 12, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": { "unit": "short" }
@@ -329,7 +370,7 @@
       "type": "timeseries",
       "title": "Grammar Traversals by Relationship Type",
       "description": "Which grammar relationships are being queried most",
-      "gridPos": { "x": 12, "y": 31, "w": 12, "h": 7 },
+      "gridPos": { "x": 12, "y": 38, "w": 12, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": { "unit": "short" }
@@ -345,7 +386,7 @@
       "id": 50,
       "type": "row",
       "title": "Trace Explorer — jump from metrics to traces",
-      "gridPos": { "x": 0, "y": 38, "w": 24, "h": 1 },
+      "gridPos": { "x": 0, "y": 45, "w": 24, "h": 1 },
       "collapsed": false
     },
 
@@ -354,7 +395,7 @@
       "type": "traces",
       "title": "Recent Traces — kapampangan-app",
       "description": "Live trace list. Click any trace to inspect the full span tree.",
-      "gridPos": { "x": 0, "y": 39, "w": 24, "h": 10 },
+      "gridPos": { "x": 0, "y": 46, "w": 24, "h": 10 },
       "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [{
         "datasource": { "type": "tempo", "uid": "tempo" },

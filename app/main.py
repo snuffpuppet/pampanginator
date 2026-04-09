@@ -33,7 +33,7 @@ init_telemetry(app)
 app.add_middleware(MetricsMiddleware)
 app.add_route("/metrics", metrics_endpoint)
 
-app.include_router(chat.router)
+app.include_router(chat.router, prefix="/api")
 app.include_router(health.router)
 
 # Serve the React build as static files if present

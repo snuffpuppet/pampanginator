@@ -5,10 +5,23 @@ distributor:
   receivers:
     otlp:
       protocols:
-        grpc:                    # receives from otel-collector
+        grpc:                    # receives from otel-collector on port 4317
 
 ingester:
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+    final_sleep: 0s
   max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 1h
+  ring:
+    kvstore:
+      store: inmemory
 
 storage:
   trace:
@@ -17,3 +30,12 @@ storage:
       path: /var/tempo/blocks
     wal:
       path: /var/tempo/wal
+    search:
+      enabled: true
+
+query_frontend:
+  search:
+    duration_slo: 5s
+    throughput_bytes_slo: 1.073741824e+09
+  trace_by_id:
+    duration_slo: 5s

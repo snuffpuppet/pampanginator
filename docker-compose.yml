@@ -96,9 +96,26 @@ services:
       - ./config/dashboard/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
       - ./config/dashboard/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
       - ./config/dashboard:/var/lib/grafana/dashboards
+      - grafana-data:/var/lib/grafana   # persists DB so home dashboard pref survives restarts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     depends_on:
       - tempo
       - prometheus
 
+  grafana-init:
+    image: curlimages/curl:latest
+    restart: "no"
+    depends_on:
+      grafana:
+        condition: service_healthy
+    volumes:
+      - ./config/grafana-init.sh:/grafana-init.sh
+    entrypoint: ["/bin/sh", "/grafana-init.sh"]
+
 volumes:
   tempo-data:
+  grafana-data:

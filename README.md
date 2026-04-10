@@ -89,6 +89,52 @@ Open `http://localhost:8000`.
 
 ---
 
+## Testing
+
+The backend unit test suite runs entirely inside Docker. No API key, no running database, and no internet connection are required — all external services (LLM, database, MCP servers) are mocked.
+
+### Prerequisites
+
+Only Docker is required. The test image is built automatically on first run.
+
+### Run the tests
+
+```bash
+make test
+```
+
+This builds a dedicated test image (`python:3.12-slim` + app and test dependencies) and runs pytest inside it. The `./app` source directory is volume-mounted, so the image only needs to be rebuilt when `requirements.txt` or `requirements-test.txt` changes.
+
+```bash
+make test-fast      # stop on first failure (faster feedback during development)
+make test-build     # force-rebuild the test image after changing requirements
+```
+
+### What is covered
+
+| File | What it tests |
+|------|--------------|
+| `tests/test_health.py` | `/health` liveness probe |
+| `tests/test_chat.py` | SSE streaming, caveat logic, error handling, session ID generation |
+| `tests/test_feedback.py` | Submit / approve / reject feedback, filter passthrough, 404 and 500 handling |
+| `tests/test_vocab.py` | MCP proxy, 503 on connection failure, upstream status propagation |
+| `tests/test_export.py` | SFT/DPO export logic, correction fallback, content-disposition header |
+| `tests/test_llm_utils.py` | `_try_parse_text_tool_call` — normalisation and rejection of text-based tool calls |
+| `tests/test_tool_router.py` | `load_tools`, Anthropic/OpenAI schema conversion, dispatch error handling |
+
+Tests use `pytest-asyncio` with `asyncio_mode = auto`. The test app is a minimal FastAPI instance with all routes registered but no lifespan, telemetry, or static file mount. Each test patches only the specific service calls it exercises.
+
+### Test infrastructure
+
+| File | Purpose |
+|------|---------|
+| `app/Dockerfile.test` | Slim test image — app dependencies + pytest, no frontend build |
+| `docker-compose.test.yml` | Runs the test container; mounts `./app` for live source |
+| `app/pytest.ini` | `asyncio_mode = auto`, `testpaths = tests` |
+| `app/requirements-test.txt` | `pytest`, `pytest-asyncio` |
+
+---
+
 ## API Endpoints
 
 ### Orchestration app (port 8000)

@@ -1,0 +1,17 @@
+version: "3.9"
+
+# Standalone compose file for running unit tests.
+# Tests are self-contained (all services mocked) — no DB, LLM, or network needed.
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml run --rm test
+#   make test
+
+services:
+  test:
+    build:
+      context: .
+      dockerfile: app/Dockerfile.test
+    volumes:
+      - ./app:/app          # live source — no rebuild needed after code changes
+      - ./config:/app/config  # system prompt / tools config (available but not called in unit tests)

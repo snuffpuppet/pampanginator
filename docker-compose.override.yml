@@ -28,10 +28,10 @@ services:
       - ./app/config:/app/config   # more specific path wins — config stays mounted
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  vocab:
+  mcp-vocabulary:
     volumes:
-      - ./vocab:/app
-      - ./vocab/data:/app/data:ro   # canonical knowledge base
+      - ./mcp-vocabulary:/app
+      - ./mcp-vocabulary/data:/app/data:ro   # canonical knowledge base
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
   grammar:

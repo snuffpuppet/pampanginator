@@ -1,6 +1,6 @@
 # Pampanginator
 
-A Kapampangan language tutor with a pluggable LLM backend. The assistant, named **Ading** (younger sibling), teaches vocabulary, verb aspect morphology, grammar, and pronunciation through conversation. It grounds every answer in authoritative reference data stored in a PostgreSQL/pgvector database rather than relying on the model's training knowledge alone.
+A Kapampangan language tutor with a pluggable LLM backend. The assistant, named **Ading** (younger sibling), teaches vocabulary, verb aspect morphology, grammar, and pronunciation through conversation. It grounds every answer in authoritative reference data stored in PostgreSQL/pgvector databases rather than relying on the model's training knowledge alone.
 
 The LLM backend is configurable — all models are accessed via OpenRouter, giving access to Claude, Llama, Gemini, and others through a single API key. Two models can be compared side by side in the Compare view.
 
@@ -12,9 +12,13 @@ The LLM backend is configurable — all models are accessed via OpenRouter, givi
 User browser
     ↓
 app (port 8000)               Orchestration API + built React frontend
-    ├── mcp-vocabulary (port 8001)   Vocabulary MCP server (pgvector semantic search)
-    └── mcp-grammar    (port 8002)   Grammar graph MCP server (pgvector + graph traversal)
-    └── postgres       (port 5432)   PostgreSQL 16 + pgvector (shared by all three)
+    ├── mcp-vocabulary  (port 8001)    Vocabulary MCP server (pgvector semantic search)
+    └── grammar (port 8002)   Grammar graph MCP server (pgvector + graph traversal)
+
+Databases (each service owns its own — no sharing)
+    ├── app-postgres     (port 5432)   interactions, feedback, pending_contributions
+    ├── vocab-postgres   (port 5433)   vocabulary entries + embeddings
+    └── grammar-postgres (port 5434)   grammar nodes, edges + embeddings
 
 Observability stack
     ├── grafana        (port 3000)   Dashboards (Prometheus + Tempo + Loki)
@@ -27,9 +31,9 @@ Observability stack
 
 **app** — FastAPI service that owns the agentic tool-use loop. Maintains per-session conversation history, logs every interaction to PostgreSQL, dispatches tool calls to the MCP servers, and serves the built React frontend as static files.
 
-**mcp-vocabulary** — FastAPI service backed by pgvector. Generates sentence-transformer embeddings (all-MiniLM-L6-v2, 384 dims) at startup for semantic search. Seeds from `data/vocabulary.json` on first boot (or when `RESEED_ON_STARTUP=true`). Exposes vocabulary search and contribution endpoints.
+**mcp-vocabulary** — FastAPI service backed by pgvector. Generates sentence-transformer embeddings (all-MiniLM-L6-v2, 384 dims) at startup for semantic search. Seeds from `mcp-vocabulary/data/vocabulary.json` on first boot (or when `RESEED_ON_STARTUP=true`). Exposes vocabulary search and contribution endpoints.
 
-**mcp-grammar** — FastAPI service backed by pgvector. Same embedding model. Seeds from `data/grammar_nodes.json` and `data/grammar_edges.json`. Exposes graph traversal using two-stage retrieval: semantic similarity to find anchor nodes, graph edges for relationship expansion.
+**grammar** — FastAPI service backed by pgvector. Same embedding model. Seeds from `grammar/data/grammar_nodes.json` and `grammar/data/grammar_edges.json`. Exposes graph traversal using two-stage retrieval: semantic similarity to find anchor nodes, graph edges for relationship expansion.
 
 ---
 
@@ -53,17 +57,20 @@ cp .env.example .env
 Key variables:
 
 ```bash
-# LLM backend — all models accessed via OpenRouter
-OPENROUTER_API_KEY=your-key-here    # required; get one at https://openrouter.ai/keys
+# PostgreSQL — all three database instances use this password
+POSTGRES_PASSWORD=change_me         # REQUIRED
 
-# Override the model from config/llm.yaml (optional)
+# LLM backend — all models accessed via OpenRouter
+OPENROUTER_API_KEY=your-key-here    # REQUIRED
+
+# Override the active model (optional — defaults to value in app/config/llm.yaml)
 # OPENROUTER_MODEL=anthropic/claude-sonnet-4-6
 
 # Admin interface password (optional — if unset, admin is open)
 VITE_ADMIN_PASSWORD=your-admin-password
 ```
 
-The model and backend are configured in `config/llm.yaml`. The `OPENROUTER_MODEL` env var overrides the model at runtime without a rebuild.
+The model and backend are configured in `app/config/llm.yaml`. The `OPENROUTER_MODEL` env var overrides the model at runtime without a rebuild.
 
 ### Dev mode (live reload)
 
@@ -87,30 +94,53 @@ Passing `-f` explicitly skips the override file. The app image is built using a 
 
 Open `http://localhost:8000`.
 
+### Seeding
+
+The `vocab` and `grammar` services seed their databases automatically on first boot when their tables are empty. No manual step is required on a clean install.
+
+**To force a full reseed** (e.g. after pulling updated canonical data files):
+
+```bash
+RESEED_ON_STARTUP=true docker compose up
+```
+
+**To reseed a single service:**
+
+```bash
+RESEED_ON_STARTUP=true docker compose up mcp-vocabulary
+RESEED_ON_STARTUP=true docker compose up grammar
+```
+
+Canonical data files:
+- `mcp-vocabulary/data/vocabulary.json`
+- `grammar/data/grammar_nodes.json`
+- `grammar/data/grammar_edges.json`
+
 ---
 
 ## Testing
 
-The backend unit test suite runs entirely inside Docker. No API key, no running database, and no internet connection are required — all external services (LLM, database, MCP servers) are mocked.
+The backend unit test suites run entirely inside Docker. No API key, no running database, and no internet connection are required — all external services (LLM, database, MCP servers) are mocked.
 
 ### Prerequisites
 
-Only Docker is required. The test image is built automatically on first run.
+Only Docker is required. Test images are built automatically on first run.
 
 ### Run the tests
 
 ```bash
-make test
+make test           # app service tests only
+make test-vocab     # vocab service tests only
+make test-grammar   # grammar service tests only
+make test-all       # all three suites in sequence
 ```
-
-This builds a dedicated test image (`python:3.12-slim` + app and test dependencies) and runs pytest inside it. The `./app` source directory is volume-mounted, so the image only needs to be rebuilt when `requirements.txt` or `requirements-test.txt` changes.
 
 ```bash
 make test-fast      # stop on first failure (faster feedback during development)
-make test-build     # force-rebuild the test image after changing requirements
+make test-build     # force-rebuild the app test image after changing requirements
 ```
 
-### What is covered
+### What is covered (app service)
 
 | File | What it tests |
 |------|--------------|
@@ -124,12 +154,14 @@ make test-build     # force-rebuild the test image after changing requirements
 
 Tests use `pytest-asyncio` with `asyncio_mode = auto`. The test app is a minimal FastAPI instance with all routes registered but no lifespan, telemetry, or static file mount. Each test patches only the specific service calls it exercises.
 
+Each of `mcp-vocabulary/` and `grammar/` has an equivalent test setup under their own directories.
+
 ### Test infrastructure
 
 | File | Purpose |
 |------|---------|
 | `app/Dockerfile.test` | Slim test image — app dependencies + pytest, no frontend build |
-| `docker-compose.test.yml` | Runs the test container; mounts `./app` for live source |
+| `docker-compose.test.yml` | Runs all three test containers; mounts service directories for live source |
 | `app/pytest.ini` | `asyncio_mode = auto`, `testpaths = tests` |
 | `app/requirements-test.txt` | `pytest`, `pytest-asyncio` |
 
@@ -160,7 +192,7 @@ Tests use `pytest-asyncio` with `asyncio_mode = auto`. The test app is a minimal
 | `GET` | `/metrics` | Prometheus metrics (OpenMetrics format) |
 | `GET` | `/docs` | Swagger UI |
 
-### MCP Vocabulary server (port 8001)
+### Vocab server (port 8001)
 
 | Method | Path | Description |
 |---|---|---|
@@ -169,7 +201,7 @@ Tests use `pytest-asyncio` with `asyncio_mode = auto`. The test app is a minimal
 | `GET` | `/status` | Service health and entry count |
 | `GET` | `/docs` | Swagger UI |
 
-### MCP Grammar server (port 8002)
+### Grammar server (port 8002)
 
 | Method | Path | Description |
 |---|---|---|
@@ -210,26 +242,32 @@ Vocabulary entries are stored in PostgreSQL with a 384-dimensional pgvector embe
 2. A cosine similarity search finds the nearest neighbours in the vector index
 3. Results include `similarity_score` — the frontend shows a "near miss" notice when the best match is below 0.72
 
-The MCP server also exposes the data to the agentic loop: when the LLM needs to ground a translation or correction in authoritative data, it calls `vocabulary_lookup` which hits the same semantic search.
+The mcp-vocabulary server also exposes the data to the agentic loop: when the LLM needs to ground a translation or correction in authoritative data, it calls `vocabulary_lookup` which hits the same semantic search.
 
 ### Vocabulary data lifecycle
 
-Canonical data lives in `data/vocabulary.json` (plus `grammar_nodes.json` and `grammar_edges.json`). On first boot, each MCP server checks whether its table is empty and seeds from these files. Set `RESEED_ON_STARTUP=true` to force a full re-seed.
+Canonical data lives in `mcp-vocabulary/data/vocabulary.json` (plus `grammar/data/grammar_nodes.json` and `grammar/data/grammar_edges.json`). On first boot, each MCP server checks whether its table is empty and seeds from these files. Set `RESEED_ON_STARTUP=true` to force a full re-seed.
 
-To add vocabulary outside the UI, use the CLI scripts:
+To manage vocabulary outside the UI, use the scripts in `mcp-vocabulary/scripts/`:
 
 ```bash
 # Export local (non-seeded) additions as a contribution zip
-python scripts/export_contributions.py
+python mcp-vocabulary/scripts/export_contributions.py
 
 # Import a vocabulary JSON file into the running database
-python scripts/import_knowledge.py --file data/vocabulary.json --mode incremental
+python mcp-vocabulary/scripts/import_knowledge.py --file mcp-vocabulary/data/vocabulary.json --mode incremental
 
 # Merge a contributor's additions into the canonical data files
-python scripts/merge_contributions.py --contrib-dir /path/to/contrib/
+python mcp-vocabulary/scripts/merge_contributions.py --contrib-dir /path/to/contrib/
 
 # Package a contribution for sharing (Mode 2)
-python scripts/package_contribution.py --contributor "Name"
+python mcp-vocabulary/scripts/package_contribution.py --contributor "Name"
+```
+
+Training data export lives in `app/scripts/`:
+
+```bash
+python app/scripts/export_training_data.py --min_authority_level 1 --format dpo --output training_data.jsonl
 ```
 
 ---
@@ -249,7 +287,7 @@ This means grammar questions are answered even when the exact node id is not kno
 
 ## Knowledge Sharing
 
-Contributors working on separate databases can share vocabulary and grammar additions through three modes, configured in `config/knowledge_sharing.yaml`:
+Contributors working on separate databases can share vocabulary and grammar additions through three modes, configured in `app/config/knowledge_sharing.yaml`:
 
 | Mode | How |
 |---|---|
@@ -263,7 +301,7 @@ The **Contributions tab** in the admin interface handles the Mode 2 zip workflow
 
 ## Feedback and Training Data
 
-Every chat interaction is logged to the `interactions` table. Users can rate any Ading response with 👍 or 👎. Thumbs-down opens an inline correction form (Kapampangan fix, English gloss, corrector identity, authority level 1–4).
+Every chat interaction is logged to the `interactions` table. Users can rate any Ading response with thumbs up or down. Thumbs-down opens an inline correction form (Kapampangan fix, English gloss, corrector identity, authority level 1–4).
 
 Approved corrections are written back to the vocabulary database, closing the loop between user feedback and the knowledge base.
 
@@ -301,68 +339,48 @@ Raw metrics are available at `http://localhost:9090`.
 
 | File | Purpose |
 |---|---|
-| `config/system_prompt.md` | Ading's persona, language profile, and interaction rules |
-| `config/tools.yaml` | Tool definitions passed to every LLM API call |
-| `config/llm.yaml` | LLM backend selection, model, temperature, tool-use toggle |
-| `config/knowledge_sharing.yaml` | Contributor name and knowledge sharing mode |
-| `config/ui.yaml` | Navigation labels, quick-action tiles, scenario definitions |
-| `config/otel-collector.yaml` | OTel collector pipeline |
-| `config/tempo.yaml` | Tempo trace storage config |
-| `config/prometheus.yaml` | Prometheus scrape targets |
-| `config/dashboard/` | Grafana datasource and dashboard provisioning |
+| `app/config/system_prompt.md` | Ading's persona, language profile, and interaction rules |
+| `app/config/tools.yaml` | Tool definitions passed to every LLM API call |
+| `app/config/llm.yaml` | LLM backend selection, model, temperature, tool-use toggle |
+| `app/config/knowledge_sharing.yaml` | Contributor name and knowledge sharing mode |
+| `app/config/ui.yaml` | Navigation labels, quick-action tiles, scenario definitions |
+| `app/config/otel-collector.yaml` | OTel collector pipeline |
+| `app/config/tempo.yaml` | Tempo trace storage config |
+| `app/config/prometheus.yaml` | Prometheus scrape targets |
+| `app/config/dashboard/` | Grafana datasource and dashboard provisioning |
 
-The `config/` directory is mounted into the `app` container — changes to the system prompt, tool definitions, and LLM settings take effect on a service restart with no image rebuild.
+The `app/config/` directory is mounted into the `app` container — changes to the system prompt, tool definitions, and LLM settings take effect on a service restart with no image rebuild.
 
 ---
 
 ## Project Layout
 
 ```
-data/                    Canonical knowledge base (seeded into PostgreSQL on first boot)
-  vocabulary.json        Vocabulary entries
-  grammar_nodes.json     Grammar concept nodes
-  grammar_edges.json     Grammar relationship edges
-  PROVENANCE.md          Contributor and source metadata
-
-db/
-  init.sql               PostgreSQL schema (vocabulary, grammar, interactions, feedback,
-                         pending_contributions tables + pgvector extension)
-
-scripts/                 CLI tools for data management
-  export_contributions.py    Export local additions as a contribution zip
-  import_knowledge.py        Import vocabulary/grammar from JSON into the database
-  merge_contributions.py     Merge incoming contributions into canonical data files
-  package_contribution.py    Package a contribution zip for sharing
-
-frontend/                React SPA
-  vite.config.ts         Dev server + Compare page LLM middleware (OpenRouter)
-  src/
-    components/
-      Home.tsx           Quick-action tiles and scenario launcher
-      Chat.tsx           Main conversation interface with feedback controls
-      Translate.tsx      Dedicated translation mode
-      Grammar.tsx        Grammar explorer
-      Vocabulary.tsx     Semantic search, flashcard drill, add-entry form
-      Compare.tsx        Side-by-side LLM comparison
-      Admin.tsx          Admin interface (review / history / export / contributions)
-      MessageBubble.tsx  Chat bubble with thumbs-up/down and inline correction form
-      BottomNav.tsx      Navigation bar
-    services/api.ts      All fetch() calls — one file (Decision 10)
-    store/               Zustand stores (conversation, vocabulary)
-    config/ui.ts         Navigation, scenarios, sample prompts
-
-app/                     Orchestration service
-  main.py                FastAPI app setup and router registration
-  telemetry.py           OTel tracing initialisation
-  metrics.py             Prometheus metric definitions
-  middleware.py          Request duration and count middleware
-  logging_setup.py       Structured JSON logging
+app/                     Orchestration service + React frontend
+  config/                Runtime configuration (mounted, not baked in)
+    system_prompt.md     Ading's persona and grammar rules
+    tools.yaml           MCP tool definitions and routing
+    llm.yaml             LLM backend selection and model config
+    knowledge_sharing.yaml  Knowledge sharing mode and settings
+    ui.yaml              Navigation, scenarios, sample prompts
+    dashboard/           Grafana provisioning
+  db/
+    init.sql             PostgreSQL schema (interactions, feedback, pending_contributions)
+  frontend/              React SPA
+    vite.config.ts       Dev server + Compare page LLM middleware
+    src/
+      components/        Chat, Translate, Grammar, Vocabulary, Compare, Admin, ...
+      services/api.ts    All fetch() calls — one file
+      store/             Zustand stores (conversation, vocabulary)
+      config/ui.ts       Navigation, scenarios, sample prompts
+  scripts/
+    export_training_data.py
   services/
     llm.py               Agentic loop (tool use, multi-turn, streaming)
     tool_router.py       Dispatches tool calls to MCP servers
     db.py                asyncpg connection pool
     interactions.py      Interaction logging
-    knowledge.py         Knowledge sharing service (sync status, export, approve/reject)
+    knowledge.py         Knowledge sharing service
   routes/
     chat.py              POST /api/chat
     feedback.py          Feedback CRUD and review endpoints
@@ -370,9 +388,21 @@ app/                     Orchestration service
     export.py            Training data export (SFT/DPO JSONL)
     admin_knowledge.py   Knowledge sharing admin endpoints
     health.py            GET /health
+  tests/                 Unit tests (pytest-asyncio, all external services mocked)
+  Dockerfile
+  Dockerfile.test
 
 mcp-vocabulary/          Vocabulary MCP server
-  main.py                FastAPI app + seeding on startup
+  data/
+    vocabulary.json      Canonical vocabulary entries (source of truth)
+    PROVENANCE.md        Contributor and source metadata
+  db/
+    init.sql             PostgreSQL schema (vocabulary table + pgvector)
+  scripts/
+    export_contributions.py
+    import_knowledge.py
+    merge_contributions.py
+    package_contribution.py
   services/
     embed.py             Sentence-transformer embedding (all-MiniLM-L6-v2)
     seed.py              Seeds from data/vocabulary.json if table is empty
@@ -380,15 +410,30 @@ mcp-vocabulary/          Vocabulary MCP server
   routes/
     lookup.py            POST /lookup (semantic search)
     vocab.py             POST /vocabulary (add entry)
+  tests/                 Unit tests
+  Dockerfile
+  Dockerfile.test
+  Makefile               up, down, logs, test, test-fast, test-build, shell
 
-mcp-grammar/             Grammar graph MCP server
-  main.py                FastAPI app + seeding on startup
+grammar/                 Grammar graph MCP server
+  data/
+    grammar_nodes.json   Canonical grammar concept nodes (source of truth)
+    grammar_edges.json   Canonical grammar relationship edges (source of truth)
+    PROVENANCE.md        Contributor and source metadata
+  db/
+    init.sql             PostgreSQL schema (grammar_nodes, grammar_edges + pgvector)
   services/
     embed.py             Sentence-transformer embedding
-    seed.py              Seeds from data/grammar_nodes.json + grammar_edges.json
+    seed.py              Seeds from data/ if tables are empty
     db.py                asyncpg pool
   routes/
     traverse.py          POST /traverse (two-stage semantic + graph retrieval)
+  tests/                 Unit tests
+  Dockerfile
+  Dockerfile.test
 
-config/                  Runtime configuration (mounted, not baked in)
+docker-compose.yml       Production service definitions
+docker-compose.override.yml  Dev overrides (Vite dev server, source mounts, hot reload)
+docker-compose.test.yml  Test runner definitions (all three suites)
+Makefile                 test, test-vocab, test-grammar, test-all, up, down, build
 ```

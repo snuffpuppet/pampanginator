@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 KNOWLEDGE_SHARING_CONFIG_PATH = Path("/app/config/knowledge_sharing.yaml")
 
-VOCAB_URL = os.environ.get("VOCABULARY_SERVICE_URL", "http://vocab:8001")
+VOCAB_URL = os.environ.get("VOCABULARY_SERVICE_URL", "http://mcp-vocabulary:8001")
 GRAMMAR_URL = os.environ.get("GRAMMAR_SERVICE_URL", "http://grammar:8002")
 
 

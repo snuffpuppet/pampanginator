@@ -4,15 +4,15 @@
 Three independent services in one repo. Each has its own database,
 codebase, and lifecycle. No shared databases. No shared code.
 
-  app/      — orchestration layer + React frontend + admin interface
-  vocab/    — vocabulary MCP server
-  grammar/  — grammar MCP server
+  app/             — orchestration layer + React frontend + admin interface
+  mcp-vocabulary/  — vocabulary MCP server
+  grammar/         — grammar MCP server
 
 ## How to work here with Claude Code
 
 For service-specific work, open Claude Code inside the service directory:
   cd app && claude
-  cd vocab && claude
+  cd mcp-vocabulary && claude
   cd grammar && claude
 
 Open Claude Code at the repo root only for cross-service work (updating

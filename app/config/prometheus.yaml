@@ -7,9 +7,9 @@ scrape_configs:
       - targets: ['app:8000']
     metrics_path: /metrics
 
-  - job_name: kapampangan-vocab
+  - job_name: kapampangan-mcp-vocabulary
     static_configs:
-      - targets: ['vocab:8001']
+      - targets: ['mcp-vocabulary:8001']
     metrics_path: /metrics
 
   - job_name: kapampangan-grammar

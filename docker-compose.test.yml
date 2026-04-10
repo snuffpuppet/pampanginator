@@ -16,12 +16,12 @@ services:
       - ./app:/app          # live source — no rebuild needed after code changes
       - ./app/config:/app/config  # system prompt / tools config (available but not called in unit tests)
 
-  test-vocabulary:
+  test-mcp-vocabulary:
     build:
-      context: .
-      dockerfile: vocab/Dockerfile.test
+      context: ./mcp-vocabulary
+      dockerfile: Dockerfile.test
     volumes:
-      - ./vocab:/app  # live source — no rebuild needed after code changes
+      - ./mcp-vocabulary:/app  # live source — no rebuild needed after code changes
 
   test-grammar:
     build:

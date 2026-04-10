@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/vocabulary", tags=["vocabulary"])
 
-VOCAB_URL = os.getenv("VOCABULARY_SERVICE_URL", "http://vocab:8001")
+VOCAB_URL = os.getenv("VOCABULARY_SERVICE_URL", "http://mcp-vocabulary:8001")
 
 
 class AddVocabularyRequest(BaseModel):

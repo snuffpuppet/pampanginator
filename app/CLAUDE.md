@@ -9,7 +9,7 @@
 - LLM API calls via Anthropic SDK
 
 ## This service does NOT own
-- Vocabulary data — call http://vocab:8001
+- Vocabulary data — call http://mcp-vocabulary:8001
 - Grammar data — call http://grammar:8002
 - vocab-postgres or grammar-postgres — never access these directly
 

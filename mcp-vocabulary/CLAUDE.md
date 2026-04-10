@@ -1,10 +1,10 @@
-# vocab/ — Vocabulary MCP Server
+# mcp-vocabulary/ — Vocabulary MCP Server
 
 ## This service owns
 - Kapampangan vocabulary entries with semantic embeddings
 - Vocabulary lookup and semantic search
 - Vocabulary contribution review queue
-- Canonical vocabulary data (vocab/data/vocabulary.json)
+- Canonical vocabulary data (mcp-vocabulary/data/vocabulary.json)
 - Vocabulary-specific scripts (export, import, merge, package)
 
 ## This service does NOT own
@@ -14,10 +14,10 @@
 
 ## Database
 vocab-postgres — tables: vocabulary, pending_contributions
-Schema: vocab/db/init.sql
+Schema: mcp-vocabulary/db/init.sql
 
 ## Canonical data
-vocab/data/vocabulary.json is the source of truth for vocabulary.
+mcp-vocabulary/data/vocabulary.json is the source of truth for vocabulary.
 The database is seeded from this file on startup if empty.
 Set RESEED_ON_STARTUP=true to force reseed after pulling updated data.
 

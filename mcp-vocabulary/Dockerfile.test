@@ -3,7 +3,7 @@ WORKDIR /app
 
 # Install service dependencies then test dependencies
 # Source is provided at runtime via a volume mount, so only deps are baked in.
-COPY mcp-vocabulary/requirements.txt mcp-vocabulary/requirements-test.txt ./
+COPY requirements.txt requirements-test.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-test.txt
 
 CMD ["python", "-m", "pytest", "tests", "-v"]

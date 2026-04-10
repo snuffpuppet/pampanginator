@@ -9,9 +9,9 @@
 - Grammar-specific scripts (export, import, merge, package)
 
 ## This service does NOT own
-- Vocabulary data — that is vocab/'s responsibility
+- Vocabulary data — that is mcp-vocabulary/'s responsibility
 - Interactions or feedback — that is app/'s responsibility
-- Any knowledge of the app or vocab services
+- Any knowledge of the app or mcp-vocabulary services
 
 ## Database
 grammar-postgres — tables: grammar_nodes, grammar_edges, pending_contributions

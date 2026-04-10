@@ -9,10 +9,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - BACKEND=${BACKEND:-anthropic}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - BACKEND=${BACKEND:-openrouter}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}
       - VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001
       - GRAMMAR_SERVICE_URL=http://mcp-grammar:8002
       - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@postgres:5432/kapampangan

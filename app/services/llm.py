@@ -1,9 +1,13 @@
 """
 LLM service — reads config/llm.yaml and exposes a single complete() function.
 
-Switching between Anthropic and any OpenAI-compatible backend (Ollama, etc.)
-is a configuration change in config/llm.yaml, not a code change. The agentic
-tool-call loop runs for both backends when tools_enabled is true.
+Switching LLM backends or swapping models is a configuration change in
+config/llm.yaml, not a code change. The agentic tool-call loop runs for any
+backend when tools_enabled is true.
+
+All backends use the OpenAI-compatible chat completions API. Set the
+OPENROUTER_API_KEY environment variable to authenticate with OpenRouter.
+The OPENROUTER_MODEL env var overrides the model declared in llm.yaml.
 """
 
 import hashlib
@@ -14,7 +18,6 @@ import re
 import time
 import yaml
 from pathlib import Path
-import anthropic
 import httpx
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -30,7 +33,6 @@ SYSTEM_PROMPT_PATH = "/app/config/system_prompt.md"
 tracer = trace.get_tracer(__name__)
 
 _backend: dict = {}
-_client: anthropic.AsyncAnthropic | None = None
 _system_prompt: str | None = None
 
 # Set during init(); used by routes for metric labels and interaction logging.
@@ -43,28 +45,22 @@ def init(
     llm_config_path: str = LLM_CONFIG_PATH,
     system_prompt_path: str = SYSTEM_PROMPT_PATH,
 ) -> None:
-    """Read llm.yaml, select the active backend, initialise the API client."""
-    global _backend, _client, _system_prompt, ACTIVE_BACKEND, ACTIVE_MODEL
+    """Read llm.yaml, select the active backend, apply env var overrides."""
+    global _backend, _system_prompt, ACTIVE_BACKEND, ACTIVE_MODEL, SYSTEM_PROMPT_VERSION
 
     with open(llm_config_path) as f:
         config = yaml.safe_load(f)
 
-    active = os.getenv("BACKEND", config.get("active_backend", "anthropic"))
+    active = os.getenv("BACKEND", config.get("active_backend", "openrouter"))
     backends = config.get("backends", {})
     if active not in backends:
         raise ValueError(f"Backend '{active}' not found in {llm_config_path}")
 
     _backend = dict(backends[active])
 
-    # Allow env var overrides for OpenAI-compatible backends (e.g. Ollama)
-    if _backend.get("api_type") == "openai_compatible":
-        if os.getenv("OLLAMA_URL"):
-            _backend["base_url"] = os.environ["OLLAMA_URL"]
-        if os.getenv("OLLAMA_MODEL"):
-            _backend["model"] = os.environ["OLLAMA_MODEL"]
-
-    if _backend.get("api_type") == "anthropic":
-        _client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    # Allow env var override for model selection
+    if os.getenv("OPENROUTER_MODEL"):
+        _backend["model"] = os.environ["OPENROUTER_MODEL"]
 
     _system_prompt = Path(system_prompt_path).read_text(encoding="utf-8")
     ACTIVE_BACKEND = active
@@ -77,110 +73,10 @@ async def complete(messages: list[dict], session_id: str = "") -> tuple[str, lis
     Send messages to the configured LLM backend, handle any tool calls, and return:
       (response_text, list_of_tool_names_used)
 
-    The agentic loop runs for both backends when tools_enabled is true in llm.yaml.
+    The agentic loop runs when tools_enabled is true in llm.yaml.
     """
-    api_type = _backend["api_type"]
     tools_enabled = _backend.get("tools_enabled", False)
-
-    if api_type == "anthropic":
-        return await _complete_anthropic(messages, session_id, tools_enabled)
-    else:
-        return await _complete_openai_compatible(messages, session_id, tools_enabled)
-
-
-async def _complete_anthropic(
-    messages: list[dict], session_id: str, tools_enabled: bool
-) -> tuple[str, list[str]]:
-    model = _backend["model"]
-    max_tokens = _backend.get("max_tokens", 1024)
-    tool_defs = get_tool_definitions(format="anthropic") if tools_enabled else []
-    tools_used: list[str] = []
-    current_messages = list(messages)
-
-    with tracer.start_as_current_span("llm.complete") as outer_span:
-        outer_span.set_attribute("llm.backend", "anthropic")
-        outer_span.set_attribute("kapampangan.session_id", session_id)
-        try:
-            while True:
-                with tracer.start_as_current_span("llm.call") as llm_span:
-                    llm_span.set_attribute("llm.model", model)
-                    llm_span.set_attribute("llm.max_tokens", max_tokens)
-                    t0 = time.time()
-                    try:
-                        response = await _client.messages.create(
-                            model=model,
-                            max_tokens=max_tokens,
-                            system=_system_prompt,
-                            tools=tool_defs,
-                            messages=current_messages,
-                        )
-                    except Exception as e:
-                        llm_span.set_status(StatusCode.ERROR, str(e))
-                        llm_span.record_exception(e)
-                        raise
-
-                    duration = time.time() - t0
-                    llm_span.set_attribute("llm.input_tokens", response.usage.input_tokens)
-                    llm_span.set_attribute("llm.output_tokens", response.usage.output_tokens)
-                    llm_span.set_attribute("llm.stop_reason", response.stop_reason)
-
-                    ctx = llm_span.get_span_context()
-                    exemplar = {"TraceID": trace.format_trace_id(ctx.trace_id)} if ctx.is_valid else None
-                    LLM_CALL_DURATION.labels(model=model).observe(duration, exemplar=exemplar)
-                    LLM_TOKENS_TOTAL.labels(direction="input", model=model).inc(
-                        response.usage.input_tokens, exemplar=exemplar
-                    )
-                    LLM_TOKENS_TOTAL.labels(direction="output", model=model).inc(
-                        response.usage.output_tokens, exemplar=exemplar
-                    )
-
-                log.info(
-                    "llm call complete",
-                    extra={
-                        "model": model,
-                        "stop_reason": response.stop_reason,
-                        "input_tokens": response.usage.input_tokens,
-                        "output_tokens": response.usage.output_tokens,
-                        "duration_s": round(duration, 3),
-                        "session_id": session_id,
-                    },
-                )
-
-                if response.stop_reason == "end_turn":
-                    text = "".join(b.text for b in response.content if hasattr(b, "text"))
-                    outer_span.set_attribute("kapampangan.tools_used_count", len(tools_used))
-                    return text, tools_used
-
-                if response.stop_reason == "tool_use":
-                    tool_calls = [b for b in response.content if b.type == "tool_use"]
-                    outer_span.set_attribute("kapampangan.tools_requested", len(tool_calls))
-                    log.info("tool calls requested", extra={"tools": [b.name for b in tool_calls], "session_id": session_id})
-                    tool_results = []
-                    for block in tool_calls:
-                        result = await dispatch(block.name, block.input, session_id=session_id)
-                        if "error" not in result:
-                            tools_used.append(block.name)
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": str(result),
-                        })
-                    current_messages = current_messages + [
-                        {"role": "assistant", "content": response.content},
-                        {"role": "user", "content": tool_results},
-                    ]
-                    continue
-
-                # Unexpected stop reason — return whatever text we have
-                log.warning("unexpected stop reason", extra={"stop_reason": response.stop_reason, "session_id": session_id})
-                text = "".join(b.text for b in response.content if hasattr(b, "text"))
-                return text, tools_used
-
-        except Exception as e:
-            outer_span.set_status(StatusCode.ERROR, str(e))
-            outer_span.record_exception(e)
-            log.error("llm call failed", extra={"error": str(e), "session_id": session_id})
-            raise
+    return await _complete_openai_compatible(messages, session_id, tools_enabled)
 
 
 def _try_parse_text_tool_call(content: str) -> tuple[str, dict] | None:
@@ -240,8 +136,14 @@ async def _complete_openai_compatible(
     tools_used: list[str] = []
     current_messages = [{"role": "system", "content": _system_prompt}] + list(messages)
 
+    # Build auth header if an API key is configured
+    headers: dict[str, str] = {}
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
     with tracer.start_as_current_span("llm.complete") as outer_span:
-        outer_span.set_attribute("llm.backend", "openai_compatible")
+        outer_span.set_attribute("llm.backend", ACTIVE_BACKEND)
         outer_span.set_attribute("llm.base_url", base_url)
         outer_span.set_attribute("kapampangan.session_id", session_id)
         try:
@@ -261,8 +163,9 @@ async def _complete_openai_compatible(
                     try:
                         async with httpx.AsyncClient(timeout=120.0) as client:
                             resp = await client.post(
-                                f"{base_url}/v1/chat/completions",
+                                f"{base_url}/chat/completions",
                                 json=body,
+                                headers=headers,
                             )
                             resp.raise_for_status()
                             data = resp.json()

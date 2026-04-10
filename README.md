@@ -2,7 +2,7 @@
 
 A Kapampangan language tutor with a pluggable LLM backend. The assistant, named **Ading** (younger sibling), teaches vocabulary, verb aspect morphology, grammar, and pronunciation through conversation. It grounds every answer in authoritative reference data stored in a PostgreSQL/pgvector database rather than relying on the model's training knowledge alone.
 
-The LLM backend is configurable — it runs against Anthropic's API (Claude) or any OpenAI-compatible model via Ollama. Both can be compared side by side in the Compare view.
+The LLM backend is configurable — all models are accessed via OpenRouter, giving access to Claude, Llama, Gemini, and others through a single API key. Two models can be compared side by side in the Compare view.
 
 ---
 
@@ -38,7 +38,7 @@ Observability stack
 ### Prerequisites
 
 - Docker and Docker Compose
-- An Anthropic API key, or Ollama running locally on the host
+- An OpenRouter API key (get one at https://openrouter.ai/keys)
 
 No Node.js installation is required on the host machine.
 
@@ -53,20 +53,17 @@ cp .env.example .env
 Key variables:
 
 ```bash
-# LLM backend
-BACKEND=anthropic
-ANTHROPIC_API_KEY=your-key-here
+# LLM backend — all models accessed via OpenRouter
+OPENROUTER_API_KEY=your-key-here    # required; get one at https://openrouter.ai/keys
 
-# Or use a local Ollama model
-# BACKEND=ollama
-# OLLAMA_MODEL=llama3.2
-# OLLAMA_URL=http://host.docker.internal:11434
+# Override the model from config/llm.yaml (optional)
+# OPENROUTER_MODEL=anthropic/claude-sonnet-4-6
 
 # Admin interface password (optional — if unset, admin is open)
 VITE_ADMIN_PASSWORD=your-admin-password
 ```
 
-The LLM backend can also be configured per-service in `config/llm.yaml` (model, temperature, max tokens, whether the agentic tool-use loop is enabled).
+The model and backend are configured in `config/llm.yaml`. The `OPENROUTER_MODEL` env var overrides the model at runtime without a rebuild.
 
 ### Dev mode (live reload)
 
@@ -145,7 +142,7 @@ Open `http://localhost:8000`.
 | `/translate` | Dedicated translation mode (EN↔KP) |
 | `/grammar` | Grammar explorer |
 | `/vocabulary` | Vocabulary search (semantic), flashcard drill, and add-entry form |
-| `/compare` | Side-by-side Anthropic vs Ollama comparison |
+| `/compare` | Side-by-side comparison of two configurable OpenRouter models |
 | `/admin` | Admin interface (password-gated) |
 
 ### Admin interface (`/admin`)
@@ -167,7 +164,7 @@ Vocabulary entries are stored in PostgreSQL with a 384-dimensional pgvector embe
 2. A cosine similarity search finds the nearest neighbours in the vector index
 3. Results include `similarity_score` — the frontend shows a "near miss" notice when the best match is below 0.72
 
-The MCP server also exposes the data to the agentic loop: when Claude needs to ground a translation or correction in authoritative data, it calls `vocabulary_lookup` which hits the same semantic search.
+The MCP server also exposes the data to the agentic loop: when the LLM needs to ground a translation or correction in authoritative data, it calls `vocabulary_lookup` which hits the same semantic search.
 
 ### Vocabulary data lifecycle
 
@@ -195,7 +192,7 @@ python scripts/package_contribution.py --contributor "Name"
 
 Grammar knowledge is stored as a typed directed graph in PostgreSQL. Each node is a grammar concept (verb root, focus type, pronoun set, etc.) with an embedding; edges carry a relationship type (`aspect_of`, `focus_type`, `related_form`, `derived_noun`).
 
-When Claude calls `grammar_lookup`, the server runs two-stage retrieval:
+When the LLM calls `grammar_lookup`, the server runs two-stage retrieval:
 
 1. **Semantic anchor** — embed the query, find the most similar node(s) in the vector index
 2. **Graph expansion** — walk edges from the anchor nodes, optionally filtered by relationship type, returning connected nodes and their labels
@@ -292,7 +289,7 @@ scripts/                 CLI tools for data management
   package_contribution.py    Package a contribution zip for sharing
 
 frontend/                React SPA
-  vite.config.ts         Dev server + fallback LLM middleware (Anthropic/Ollama)
+  vite.config.ts         Dev server + Compare page LLM middleware (OpenRouter)
   src/
     components/
       Home.tsx           Quick-action tiles and scenario launcher

@@ -6,28 +6,33 @@ import { dirname, join } from 'path'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SYSTEM_PROMPT_PATH = join(__dirname, '../config/system_prompt.md')
 
-// ─── Shared SSE streaming helper ─────────────────────────────────────────────
-async function streamOllama(
-  ollamaUrl: string,
-  ollamaModel: string,
+// ─── OpenRouter SSE streaming helper ─────────────────────────────────────────
+async function streamOpenRouter(
+  apiKey: string,
+  model: string,
   systemPrompt: string,
   messages: { role: string; content: string }[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   res: any,
 ) {
-  const ollamaRes = await fetch(`${ollamaUrl}/v1/chat/completions`, {
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY not set in .env')
+
+  const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
     body: JSON.stringify({
-      model: ollamaModel,
+      model,
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
       stream: true,
     }),
   })
 
-  if (!ollamaRes.ok) throw new Error(`Ollama error ${ollamaRes.status} — is Ollama running? Try: ollama serve`)
+  if (!orRes.ok) throw new Error(`OpenRouter error ${orRes.status} — check your OPENROUTER_API_KEY`)
 
-  const reader = ollamaRes.body!.getReader()
+  const reader = orRes.body!.getReader()
   const decoder = new TextDecoder()
   let buf = ''
 
@@ -50,38 +55,16 @@ async function streamOllama(
   }
 }
 
-async function streamAnthropic(
-  apiKey: string,
-  systemPrompt: string,
-  messages: { role: string; content: string }[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  res: any,
-) {
-  const { default: Anthropic } = await import('@anthropic-ai/sdk')
-  const client = new Anthropic({ apiKey })
-
-  const stream = client.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages: messages as Parameters<typeof client.messages.stream>[0]['messages'],
-  })
-
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      res.write(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`)
-    }
-  }
-}
-
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
   // ── Config from .env ───────────────────────────────────────────────────────
-  const defaultBackend = (env.BACKEND || 'anthropic') as 'anthropic' | 'ollama'
-  const ollamaModel    = env.OLLAMA_MODEL || 'llama3.2'
-  const ollamaUrl      = env.OLLAMA_URL   || 'http://localhost:11434'
-  const anthropicKey   = env.ANTHROPIC_API_KEY || ''
+  const defaultBackend = env.BACKEND || 'openrouter'
+  const openRouterKey  = env.OPENROUTER_API_KEY || ''
+  const modelA         = env.OPENROUTER_MODEL_A || 'anthropic/claude-sonnet-4-6'
+  const modelB         = env.OPENROUTER_MODEL_B || 'meta-llama/llama-3.1-8b-instruct'
+  // Active model: explicit override, else model A default
+  const activeModel    = env.OPENROUTER_MODEL || modelA
 
   return {
     build: { outDir: '../app/frontend' },
@@ -95,16 +78,16 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use('/api/status', (_req, res) => {
             res.writeHead(200, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({
-              backend:        defaultBackend,
-              ollamaModel,
-              ollamaUrl,
-              hasAnthropicKey: !!anthropicKey,
+              backend:          defaultBackend,
+              modelA,
+              modelB,
+              hasOpenRouterKey: !!openRouterKey,
             }))
           })
 
           // ── Chat handler factory ─────────────────────────────────────────────
           async function handleChat(
-            backend: 'anthropic' | 'ollama',
+            model: string,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             req: any,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -124,15 +107,10 @@ export default defineConfig(({ mode }) => {
                   'Content-Type':  'text/event-stream',
                   'Cache-Control': 'no-cache',
                   'Connection':    'keep-alive',
-                  'X-Backend':     backend,
+                  'X-Model':       model,
                 })
 
-                if (backend === 'ollama') {
-                  await streamOllama(ollamaUrl, ollamaModel, systemPrompt, messages, res)
-                } else {
-                  if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY not set in .env')
-                  await streamAnthropic(anthropicKey, systemPrompt, messages, res)
-                }
+                await streamOpenRouter(openRouterKey, model, systemPrompt, messages, res)
 
                 res.write('data: [DONE]\n\n')
                 res.end()
@@ -144,19 +122,19 @@ export default defineConfig(({ mode }) => {
             })
           }
 
-          // ── /api/chat/anthropic — always Anthropic ───────────────────────────
-          server.middlewares.use('/api/chat/anthropic', (req, res) => {
-            handleChat('anthropic', req, res)
+          // ── /api/chat/model-a — always model A ───────────────────────────────
+          server.middlewares.use('/api/chat/model-a', (req, res) => {
+            handleChat(modelA, req, res)
           })
 
-          // ── /api/chat/ollama — always Ollama ─────────────────────────────────
-          server.middlewares.use('/api/chat/ollama', (req, res) => {
-            handleChat('ollama', req, res)
+          // ── /api/chat/model-b — always model B ───────────────────────────────
+          server.middlewares.use('/api/chat/model-b', (req, res) => {
+            handleChat(modelB, req, res)
           })
 
-          // ── /api/chat — uses BACKEND from .env ───────────────────────────────
+          // ── /api/chat — uses active model from .env ───────────────────────────
           server.middlewares.use('/api/chat', (req, res) => {
-            handleChat(defaultBackend, req, res)
+            handleChat(activeModel, req, res)
           })
         },
       },

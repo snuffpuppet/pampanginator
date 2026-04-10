@@ -1,26 +1,19 @@
 # LLM backend configuration.
 #
 # active_backend is overridden at runtime by the BACKEND env var.
-# Within the ollama backend, base_url and model are further overridden
-# by OLLAMA_URL and OLLAMA_MODEL env vars.
+# model is overridden by the OPENROUTER_MODEL env var.
 #
 # tools_enabled: whether to pass tool definitions to the LLM and run the
 # agentic dispatch loop. Set to false for models that do not support
 # function calling.
 
-active_backend: anthropic
+active_backend: openrouter
 
 backends:
 
-  anthropic:
-    api_type: anthropic
-    model: claude-sonnet-4-6
+  openrouter:
+    api_type: openai_compatible
+    base_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-sonnet-4-6   # overridden by OPENROUTER_MODEL env var
     max_tokens: 1024
     tools_enabled: true
-
-  ollama:
-    api_type: openai_compatible
-    base_url: http://host.docker.internal:11434
-    model: llama3.2
-    max_tokens: 1024
-    tools_enabled: true   # requires a function-calling capable model; set false for models that lack it

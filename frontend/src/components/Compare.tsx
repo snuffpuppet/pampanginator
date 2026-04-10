@@ -15,11 +15,11 @@ const EMPTY_PANEL: PanelState = { text: '', status: 'idle', elapsedMs: null, err
 export default function Compare() {
   const [query, setQuery]         = useState('')
   const [isRunning, setIsRunning] = useState(false)
-  const [anthropic, setAnthropic] = useState<PanelState>(EMPTY_PANEL)
-  const [ollama, setOllama]       = useState<PanelState>(EMPTY_PANEL)
+  const [modelA, setModelA]       = useState<PanelState>(EMPTY_PANEL)
+  const [modelB, setModelB]       = useState<PanelState>(EMPTY_PANEL)
   const [status, setStatus]       = useState<BackendStatus | null>(null)
-  const anthropicRef              = useRef<HTMLDivElement>(null)
-  const ollamaRef                 = useRef<HTMLDivElement>(null)
+  const modelARef                 = useRef<HTMLDivElement>(null)
+  const modelBRef                 = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     getBackendStatus().then(setStatus).catch(() => null)
@@ -28,8 +28,8 @@ export default function Compare() {
   async function runComparison() {
     if (!query.trim() || isRunning) return
     setIsRunning(true)
-    setAnthropic({ text: '', status: 'streaming', elapsedMs: null, error: null })
-    setOllama({ text: '', status: 'streaming', elapsedMs: null, error: null })
+    setModelA({ text: '', status: 'streaming', elapsedMs: null, error: null })
+    setModelB({ text: '', status: 'streaming', elapsedMs: null, error: null })
 
     const messages = [{ role: 'user' as const, content: query }]
 
@@ -58,8 +58,8 @@ export default function Compare() {
     }
 
     await Promise.allSettled([
-      runPanel('/api/chat/anthropic', setAnthropic),
-      runPanel('/api/chat/ollama', setOllama),
+      runPanel('/api/chat/model-a', setModelA),
+      runPanel('/api/chat/model-b', setModelB),
     ])
 
     setIsRunning(false)
@@ -69,7 +69,8 @@ export default function Compare() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runComparison() }
   }
 
-  const ollamaLabel = status ? status.ollamaModel : 'ollama'
+  const labelA = status ? status.modelA : 'model-a'
+  const labelB = status ? status.modelB : 'model-b'
 
   return (
     <div className="page page-enter" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -81,7 +82,7 @@ export default function Compare() {
             Compare
           </h1>
           <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            Claude vs Local LLM
+            Model A vs Model B
           </span>
         </div>
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
@@ -96,21 +97,11 @@ export default function Compare() {
             fontSize: '0.7rem',
             padding: '0.2rem 0.6rem',
             borderRadius: 20,
-            background: status.hasAnthropicKey ? 'rgba(61,138,101,0.18)' : 'rgba(193,68,14,0.18)',
-            border: `1px solid ${status.hasAnthropicKey ? 'rgba(61,138,101,0.4)' : 'rgba(193,68,14,0.4)'}`,
-            color: status.hasAnthropicKey ? '#6ecf9f' : '#e07050',
+            background: status.hasOpenRouterKey ? 'rgba(61,138,101,0.18)' : 'rgba(193,68,14,0.18)',
+            border: `1px solid ${status.hasOpenRouterKey ? 'rgba(61,138,101,0.4)' : 'rgba(193,68,14,0.4)'}`,
+            color: status.hasOpenRouterKey ? '#6ecf9f' : '#e07050',
           }}>
-            {status.hasAnthropicKey ? '● Claude (Anthropic)' : '○ Claude — no API key'}
-          </span>
-          <span style={{
-            fontSize: '0.7rem',
-            padding: '0.2rem 0.6rem',
-            borderRadius: 20,
-            background: 'rgba(245,166,35,0.1)',
-            border: '1px solid rgba(245,166,35,0.25)',
-            color: 'var(--amber)',
-          }}>
-            ◉ {ollamaLabel} (local)
+            {status.hasOpenRouterKey ? '● OpenRouter connected' : '○ OpenRouter — no API key'}
           </span>
           <span style={{
             fontSize: '0.7rem',
@@ -204,20 +195,20 @@ export default function Compare() {
         borderTop: '1px solid var(--border)',
       }}>
         <Panel
-          label="Claude"
-          sublabel="Anthropic"
+          label={labelA}
+          sublabel="OpenRouter · A"
           accentColor="var(--forest-light, #3d8a65)"
-          state={anthropic}
-          ref={anthropicRef}
+          state={modelA}
+          ref={modelARef}
           isRunning={isRunning}
         />
         <div style={{ borderLeft: '1px solid var(--border)', overflow: 'hidden' }}>
           <Panel
-            label={ollamaLabel}
-            sublabel="Local · Ollama"
+            label={labelB}
+            sublabel="OpenRouter · B"
             accentColor="var(--amber)"
-            state={ollama}
-            ref={ollamaRef}
+            state={modelB}
+            ref={modelBRef}
             isRunning={isRunning}
           />
         </div>
@@ -319,9 +310,9 @@ function Panel({ label, sublabel, accentColor, state, isRunning, ref }: PanelPro
             }}>
               <strong>Error</strong><br />
               {state.error}
-              {state.error?.includes('Ollama') && (
+              {state.error?.includes('OPENROUTER_API_KEY') && (
                 <div style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.72rem' }}>
-                  Make sure Ollama is running: <code style={{ color: 'var(--amber)' }}>ollama serve</code>
+                  Set <code style={{ color: 'var(--amber)' }}>OPENROUTER_API_KEY</code> in your <code style={{ color: 'var(--amber)' }}>.env</code> file.
                 </div>
               )}
             </div>

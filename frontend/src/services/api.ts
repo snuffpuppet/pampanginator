@@ -23,10 +23,10 @@ export interface ApiMessage {
 }
 
 export interface BackendStatus {
-  backend: 'anthropic' | 'ollama'
-  ollamaModel: string
-  ollamaUrl: string
-  hasAnthropicKey: boolean
+  backend: string
+  modelA: string
+  modelB: string
+  hasOpenRouterKey: boolean
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

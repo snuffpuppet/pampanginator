@@ -10,8 +10,7 @@
 
 A Kapampangan language tutor application consisting of a React frontend, a Python
 FastAPI orchestration layer, and two MCP (Model Context Protocol) servers providing
-domain knowledge to a configurable LLM backend (Anthropic Claude or any
-OpenAI-compatible model via Ollama).
+domain knowledge to a configurable LLM backend accessed via OpenRouter.
 
 The system is designed around three principles:
 - **Thin code, rich data** — logic lives in config and data, not in algorithms
@@ -61,7 +60,7 @@ The system is designed around three principles:
 └──────────────────────────────────────────────────────────────┘
                            │
                            ▼
-                   Anthropic Claude API
+                      OpenRouter API
 ```
 
 ---
@@ -145,27 +144,22 @@ token limits, and whether tool calling is enabled are declared in `config/llm.ya
 not in code:
 
 ```yaml
-active_backend: anthropic   # overridden by BACKEND env var
+active_backend: openrouter   # overridden by BACKEND env var
 
 backends:
-  anthropic:
-    api_type: anthropic
-    model: claude-sonnet-4-6
-    max_tokens: 1024
-    tools_enabled: true
-
-  ollama:
+  openrouter:
     api_type: openai_compatible
-    base_url: http://host.docker.internal:11434
-    model: llama3.2
+    base_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-sonnet-4-6   # overridden by OPENROUTER_MODEL env var
     max_tokens: 1024
     tools_enabled: true
 ```
 
 Switching backends, swapping models, or disabling tool calls for a model that does
 not support them is a config edit and container restart — no code change. Adding a
-new backend (e.g. a hosted OpenAI-compatible endpoint) means adding a config block
-and, if the API wire format differs, a thin adapter in `llm.py`.
+new backend means adding a config block and, if the API wire format differs, a thin
+adapter in `llm.py`. Authentication is via `OPENROUTER_API_KEY` env var injected as
+a Bearer header at runtime.
 
 ### Decision 2 — LLM is stateless, state is managed by the orchestration layer
 
@@ -421,9 +415,10 @@ Docker Compose automatically merges `docker-compose.yml` with
 
 In dev mode, `/api/chat` is served by the FastAPI `app` container — the same code
 path as production. The Vite dev server proxies to it. The Compare page's
-`/api/chat/anthropic` and `/api/chat/ollama` endpoints are implemented as convenience
-routes in the Vite middleware for direct per-backend comparison; they do not go
-through the FastAPI agentic loop.
+`/api/chat/model-a` and `/api/chat/model-b` endpoints are implemented as convenience
+routes in the Vite middleware for direct per-model comparison via OpenRouter; they do
+not go through the FastAPI agentic loop. Models are configured via
+`OPENROUTER_MODEL_A` and `OPENROUTER_MODEL_B` in `.env`.
 
 **Prod mode** — `docker compose -f docker-compose.yml up`
 
@@ -666,10 +661,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - BACKEND=${BACKEND:-anthropic}           # selects active backend; overrides llm.yaml
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - BACKEND=${BACKEND:-openrouter}           # selects active backend; overrides llm.yaml
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}   # overrides model in llm.yaml if set
       - VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001
       - GRAMMAR_SERVICE_URL=http://mcp-grammar:8002
     volumes:

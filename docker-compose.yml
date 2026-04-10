@@ -13,7 +13,7 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}
       - VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001
-      - GRAMMAR_SERVICE_URL=http://grammar:8002
+      - GRAMMAR_SERVICE_URL=http://mcp-grammar:8002
       - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@app-postgres:5432/kapampangan
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=kapampangan-app
@@ -24,7 +24,7 @@ services:
       - ./app/config:/app/config        # Mount so prompt/tools changes take effect on restart
     depends_on:
       - mcp-vocabulary
-      - grammar
+      - mcp-grammar
       - app-postgres
       - otel-collector
 
@@ -46,20 +46,20 @@ services:
       - vocab-postgres
       - otel-collector
 
-  grammar:
-    build: ./grammar
+  mcp-grammar:
+    build: ./mcp-grammar
     ports:
       - "8002:8002"
     environment:
       - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@grammar-postgres:5432/kapampangan
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
-      - OTEL_SERVICE_NAME=kapampangan-grammar
+      - OTEL_SERVICE_NAME=kapampangan-mcp-grammar
       - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
       - RESEED_ON_STARTUP=${RESEED_ON_STARTUP:-false}
     volumes:
-      - ./grammar/data:/app/data:ro     # canonical knowledge base — read-only
+      - ./mcp-grammar/data:/app/data:ro     # canonical knowledge base — read-only
     depends_on:
       - grammar-postgres
       - otel-collector
@@ -191,7 +191,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - grammar-postgres-data:/var/lib/postgresql/data
-      - ./grammar/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./mcp-grammar/db/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5434:5432"
     healthcheck:

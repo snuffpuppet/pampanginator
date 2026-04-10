@@ -1,0 +1,16 @@
+version: "3.9"
+
+# Standalone test runner for the mcp-grammar service.
+# Tests are self-contained (all services mocked) — no DB or network needed.
+#
+# Usage (from mcp-grammar/):
+#   docker compose -f docker-compose.test.yml run --rm test-mcp-grammar
+#   make test
+
+services:
+  test-mcp-grammar:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    volumes:
+      - .:/app  # live source — no rebuild needed after code changes

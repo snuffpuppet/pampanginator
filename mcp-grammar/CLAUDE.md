@@ -1,11 +1,11 @@
-# grammar/ — Grammar MCP Server
+# mcp-grammar/ — Grammar MCP Server
 
 ## This service owns
 - Kapampangan grammar graph (nodes and edges) with semantic embeddings
 - Two-stage retrieval (semantic search + graph traversal)
 - Grammar contribution review queue
-- Canonical grammar data (grammar/data/grammar_nodes.json,
-  grammar/data/grammar_edges.json)
+- Canonical grammar data (mcp-grammar/data/grammar_nodes.json,
+  mcp-grammar/data/grammar_edges.json)
 - Grammar-specific scripts (export, import, merge, package)
 
 ## This service does NOT own
@@ -15,10 +15,10 @@
 
 ## Database
 grammar-postgres — tables: grammar_nodes, grammar_edges, pending_contributions
-Schema: grammar/db/init.sql
+Schema: mcp-grammar/db/init.sql
 
 ## Canonical data
-grammar/data/grammar_nodes.json and grammar/data/grammar_edges.json are
+mcp-grammar/data/grammar_nodes.json and mcp-grammar/data/grammar_edges.json are
 the source of truth. The database is seeded from these files on startup
 if empty. Set RESEED_ON_STARTUP=true to force reseed.
 

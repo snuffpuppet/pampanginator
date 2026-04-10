@@ -21,7 +21,7 @@ User browser
     ↓
 app (port 8000)               Orchestration API + built React frontend
     ├── mcp-vocabulary  (port 8001)    Vocabulary MCP server (pgvector semantic search)
-    └── grammar (port 8002)   Grammar graph MCP server (pgvector + graph traversal)
+    └── mcp-grammar     (port 8002)    Grammar graph MCP server (pgvector + graph traversal)
 
 Databases (each service owns its own — no sharing)
     ├── app-postgres     (port 5432)   interactions, feedback, pending_contributions
@@ -41,13 +41,13 @@ Observability
 
 ## Monorepo Structure
 
-The project is a monorepo of three independent services: `app/`, `mcp-vocabulary/`, and `grammar/`. Each has its own database, Dockerfile, data files, scripts, and tests. They share no code and no database.
+The project is a monorepo of three independent services: `app/`, `mcp-vocabulary/`, and `mcp-grammar/`. Each has its own database, Dockerfile, data files, scripts, and tests. They share no code and no database.
 
 **Why three separate services:**
 
 The vocabulary, grammar, and orchestration layers have completely different rates of change and data concerns. Vocabulary expands constantly from user contributions. Grammar nodes are rarer, higher-authority additions. The orchestration layer changes with LLM features and UI work. Coupling them into a shared database would mean migrations that touch unrelated concerns, and coupling them into shared code would create accidental dependencies.
 
-**Rule for contributors:** Most changes are bounded to a single subproject directory. If a change spans more than one of `app/`, `mcp-vocabulary/`, or `grammar/`, it is a cross-service change and requires more careful review of the service boundary.
+**Rule for contributors:** Most changes are bounded to a single subproject directory. If a change spans more than one of `app/`, `mcp-vocabulary/`, or `mcp-grammar/`, it is a cross-service change and requires more careful review of the service boundary.
 
 For service-specific work, open Claude Code inside the service directory (`cd app && claude`, etc.). Open at the repo root only for cross-service changes.
 
@@ -276,7 +276,7 @@ Upgrade process: pull the new image, read migration notes, update affected confi
 
 The canonical knowledge base lives in version-controlled flat files in each service's `data/` directory. The PostgreSQL database is a materialised, queryable view of those files — not the source of truth.
 
-- **Source of truth:** `mcp-vocabulary/data/vocabulary.json`, `grammar/data/grammar_nodes.json`, `grammar/data/grammar_edges.json`
+- **Source of truth:** `mcp-vocabulary/data/vocabulary.json`, `mcp-grammar/data/grammar_nodes.json`, `mcp-grammar/data/grammar_edges.json`
 - **Runtime store:** PostgreSQL, seeded from those files on startup
 - **Contribution path:** local database → export → review → merge into files → repo
 

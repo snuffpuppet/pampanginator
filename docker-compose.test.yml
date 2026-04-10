@@ -23,9 +23,9 @@ services:
     volumes:
       - ./mcp-vocabulary:/app  # live source — no rebuild needed after code changes
 
-  test-grammar:
+  test-mcp-grammar:
     build:
-      context: .
-      dockerfile: grammar/Dockerfile.test
+      context: ./mcp-grammar
+      dockerfile: Dockerfile.test
     volumes:
-      - ./grammar:/app  # live source — no rebuild needed after code changes
+      - ./mcp-grammar:/app  # live source — no rebuild needed after code changes

@@ -34,10 +34,10 @@ services:
       - ./mcp-vocabulary/data:/app/data:ro   # canonical knowledge base
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
-  grammar:
+  mcp-grammar:
     volumes:
-      - ./grammar:/app
-      - ./grammar/data:/app/data:ro   # canonical knowledge base
+      - ./mcp-grammar:/app
+      - ./mcp-grammar/data:/app/data:ro   # canonical knowledge base
     command: uvicorn main:app --host 0.0.0.0 --port 8002 --reload
 
 volumes:

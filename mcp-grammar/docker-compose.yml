@@ -1,28 +1,29 @@
 version: "3.9"
 
-# Isolated local dev for the grammar service only.
-# Brings up grammar + grammar-postgres. No other services are started.
+# Isolated local dev for the mcp-grammar service only.
+# Brings up mcp-grammar + grammar-postgres. No other services are started.
 #
-# Usage (from repo root):
-#   docker compose -f grammar/docker-compose.dev.yml up
+# Usage (from mcp-grammar/):
+#   docker compose up
+#   make up
 
 services:
 
-  grammar:
-    build: ./grammar
+  mcp-grammar:
+    build: .
     ports:
       - "8002:8002"
     environment:
       - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD:-kapampangan_dev}@grammar-postgres:5432/kapampangan
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4318}
-      - OTEL_SERVICE_NAME=kapampangan-grammar
+      - OTEL_SERVICE_NAME=kapampangan-mcp-grammar
       - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
       - RESEED_ON_STARTUP=${RESEED_ON_STARTUP:-false}
     volumes:
-      - ./grammar:/app
-      - ./grammar/data:/app/data:ro
+      - .:/app
+      - ./data:/app/data:ro
     command: uvicorn main:app --host 0.0.0.0 --port 8002 --reload
     depends_on:
       grammar-postgres:
@@ -36,7 +37,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-kapampangan_dev}
     volumes:
       - grammar-postgres-dev-data:/var/lib/postgresql/data
-      - ./grammar/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5434:5432"
     healthcheck:

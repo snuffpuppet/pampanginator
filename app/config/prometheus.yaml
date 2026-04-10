@@ -12,7 +12,7 @@ scrape_configs:
       - targets: ['mcp-vocabulary:8001']
     metrics_path: /metrics
 
-  - job_name: kapampangan-grammar
+  - job_name: kapampangan-mcp-grammar
     static_configs:
-      - targets: ['grammar:8002']
+      - targets: ['mcp-grammar:8002']
     metrics_path: /metrics

@@ -44,7 +44,7 @@ tools:
       case_system, absolutive_case, ergative_case, oblique_case,
       absolutive_pronouns, ergative_pronouns, portmanteau_pronouns,
       particles, demonstratives, vso_word_order, verb_focus_system.
-    endpoint: http://grammar:8002/traverse
+    endpoint: http://mcp-grammar:8002/traverse
     method: POST
     timeout_seconds: 10
     parameters:

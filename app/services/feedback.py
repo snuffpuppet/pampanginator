@@ -190,7 +190,7 @@ async def _apply_correction_to_vocabulary(
     import httpx
     import os
 
-    vocab_url = os.getenv("VOCABULARY_SERVICE_URL", "http://mcp-vocabulary:8001")
+    vocab_url = os.getenv("VOCABULARY_SERVICE_URL", "http://vocab:8001")
     payload = {
         "term": correction_kapampangan,
         "meaning": correction_english or correction_kapampangan,

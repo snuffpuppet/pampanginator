@@ -17,7 +17,7 @@ SAMPLE_TOOLS_YAML = """\
 tools:
   - name: vocabulary_lookup
     description: Look up Kapampangan vocabulary terms
-    endpoint: http://mcp-vocabulary:8001/lookup
+    endpoint: http://vocab:8001/lookup
     method: POST
     timeout_seconds: 10
     parameters:
@@ -32,7 +32,7 @@ tools:
 
   - name: grammar_lookup
     description: Look up Kapampangan grammar rules
-    endpoint: http://mcp-grammar:8002/traverse
+    endpoint: http://grammar:8002/traverse
     method: POST
     timeout_seconds: 10
     parameters:
@@ -157,7 +157,7 @@ async def test_dispatch_successful_call(tools_yaml):
 
     assert "results" in result
     mock_client.request.assert_called_once_with(
-        "POST", "http://mcp-vocabulary:8001/lookup", json={"term": "mangan"}
+        "POST", "http://vocab:8001/lookup", json={"term": "mangan"}
     )
 
 

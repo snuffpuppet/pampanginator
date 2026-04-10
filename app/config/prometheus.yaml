@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: kapampangan-app
+    static_configs:
+      - targets: ['app:8000']
+    metrics_path: /metrics
+
+  - job_name: kapampangan-vocab
+    static_configs:
+      - targets: ['vocab:8001']
+    metrics_path: /metrics
+
+  - job_name: kapampangan-grammar
+    static_configs:
+      - targets: ['grammar:8002']
+    metrics_path: /metrics

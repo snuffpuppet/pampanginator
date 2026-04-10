@@ -3,9 +3,9 @@
 # resolves to /build/app/frontend — picked up by COPY in stage 2.
 FROM node:20-alpine AS frontend-build
 WORKDIR /build/frontend
-COPY frontend/package*.json ./
+COPY app/frontend/package*.json ./
 RUN npm ci
-COPY frontend/ ./
+COPY app/frontend/ ./
 RUN npm run build
 
 # Stage 2 — Python runtime

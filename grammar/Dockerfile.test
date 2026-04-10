@@ -1,0 +1,9 @@
+FROM python:3.12-slim
+WORKDIR /app
+
+# Install service dependencies then test dependencies
+# Source is provided at runtime via a volume mount, so only deps are baked in.
+COPY mcp-grammar/requirements.txt mcp-grammar/requirements-test.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-test.txt
+
+CMD ["python", "-m", "pytest", "tests", "-v"]

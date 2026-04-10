@@ -1,16 +1,30 @@
-# Project Instructions
+# Kapampangan Tutor — Monorepo
+
+## Structure
+Three independent services in one repo. Each has its own database,
+codebase, and lifecycle. No shared databases. No shared code.
+
+  app/      — orchestration layer + React frontend + admin interface
+  vocab/    — vocabulary MCP server
+  grammar/  — grammar MCP server
+
+## How to work here with Claude Code
+
+For service-specific work, open Claude Code inside the service directory:
+  cd app && claude
+  cd vocab && claude
+  cd grammar && claude
+
+Open Claude Code at the repo root only for cross-service work (updating
+docker-compose, changing API contracts between services, repo-wide changes).
+Cross-service work should be rare — most changes are bounded to one service.
 
 ## Architecture
-Follow ARCHITECTURE.md. The architecture-compliance skill is installed globally
-and will enforce this automatically.
+Read ARCHITECTURE.md at the repo root for the full design. It is the
+authoritative reference for all decisions. Deviate only with justification.
 
 ## Skills
-When building or modifying MCP servers, read:
-/mnt/skills/examples/mcp-builder/SKILL.md
-
-## Skills in use on this project
-- mcp-builder: consult when building or modifying MCP servers
-- frontend-design: consult when building or modifying React components
-- architecture-compliance: consult before any structural change
-- otel-instrumentation: instrument the code for tracing
-- otel-metrics: Ensure code coverage with metrics 
+The following skills are installed and apply across all services:
+- architecture-compliance: read before any structural change
+- otel-instrumentation: read when modifying tracing
+- otel-metrics: read when modifying metrics

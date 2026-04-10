@@ -12,63 +12,63 @@ services:
       - BACKEND=${BACKEND:-openrouter}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}
-      - VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001
-      - GRAMMAR_SERVICE_URL=http://mcp-grammar:8002
-      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@postgres:5432/kapampangan
+      - VOCABULARY_SERVICE_URL=http://vocab:8001
+      - GRAMMAR_SERVICE_URL=http://grammar:8002
+      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@app-postgres:5432/kapampangan
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=kapampangan-app
       - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
     volumes:
-      - ./config:/app/config        # Mount so prompt/tools changes take effect on restart
+      - ./app/config:/app/config        # Mount so prompt/tools changes take effect on restart
     depends_on:
-      - mcp-vocabulary
-      - mcp-grammar
-      - postgres
+      - vocab
+      - grammar
+      - app-postgres
       - otel-collector
 
-  mcp-vocabulary:
-    build: ./mcp-vocabulary
+  vocab:
+    build: ./vocab
     ports:
       - "8001:8001"
     environment:
-      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@postgres:5432/kapampangan
+      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@vocab-postgres:5432/kapampangan
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
-      - OTEL_SERVICE_NAME=kapampangan-mcp-vocabulary
+      - OTEL_SERVICE_NAME=kapampangan-vocab
       - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
       - RESEED_ON_STARTUP=${RESEED_ON_STARTUP:-false}
     volumes:
-      - ./data:/app/data:ro        # canonical knowledge base — read-only for MCP servers
+      - ./vocab/data:/app/data:ro       # canonical knowledge base — read-only
     depends_on:
-      - postgres
+      - vocab-postgres
       - otel-collector
 
-  mcp-grammar:
-    build: ./mcp-grammar
+  grammar:
+    build: ./grammar
     ports:
       - "8002:8002"
     environment:
-      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@postgres:5432/kapampangan
+      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@grammar-postgres:5432/kapampangan
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
-      - OTEL_SERVICE_NAME=kapampangan-mcp-grammar
+      - OTEL_SERVICE_NAME=kapampangan-grammar
       - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
       - RESEED_ON_STARTUP=${RESEED_ON_STARTUP:-false}
     volumes:
-      - ./data:/app/data:ro        # canonical knowledge base — read-only for MCP servers
+      - ./grammar/data:/app/data:ro     # canonical knowledge base — read-only
     depends_on:
-      - postgres
+      - grammar-postgres
       - otel-collector
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.149.0
     command: ["--config=/etc/otel-collector.yaml"]
     volumes:
-      - ./config/otel-collector.yaml:/etc/otel-collector.yaml
+      - ./app/config/otel-collector.yaml:/etc/otel-collector.yaml
     ports:
       - "4318:4318"   # OTLP HTTP receiver — services send spans here
       - "8888:8888"   # Collector self-metrics (optional)
@@ -82,7 +82,7 @@ services:
       - "-target=scalable-single-binary"   # avoids Kafka-based write path default in 2.7+
       - "-querier.frontend-address=127.0.0.1:9095"  # querier connects to frontend on same process
     volumes:
-      - ./config/tempo.yaml:/etc/tempo.yaml
+      - ./app/config/tempo.yaml:/etc/tempo.yaml
       - tempo-data:/var/tempo
     ports:
       - "3200:3200"   # Tempo query API — Grafana reads traces here
@@ -94,7 +94,7 @@ services:
       - --enable-feature=exemplar-storage        # required for exemplars
       - --web.enable-remote-write-receiver       # required for Tempo metrics generator
     volumes:
-      - ./config/prometheus.yaml:/etc/prometheus.yaml
+      - ./app/config/prometheus.yaml:/etc/prometheus.yaml
     ports:
       - "9090:9090"   # Prometheus UI
 
@@ -102,7 +102,7 @@ services:
     image: grafana/loki:3.3.2
     command: ["-config.file=/etc/loki.yaml"]
     volumes:
-      - ./config/loki.yaml:/etc/loki.yaml
+      - ./app/config/loki.yaml:/etc/loki.yaml
       - loki-data:/loki
     ports:
       - "3100:3100"   # Loki query API (optional — useful for curl debugging)
@@ -111,7 +111,7 @@ services:
     image: grafana/promtail:3.3.2
     command: ["-config.file=/etc/promtail.yaml"]
     volumes:
-      - ./config/promtail.yaml:/etc/promtail.yaml
+      - ./app/config/promtail.yaml:/etc/promtail.yaml
       - /var/run/docker.sock:/var/run/docker.sock:ro   # read container logs via Docker socket
     depends_on:
       - loki
@@ -125,9 +125,9 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     volumes:
-      - ./config/dashboard/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
-      - ./config/dashboard/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
-      - ./config/dashboard:/var/lib/grafana/dashboards
+      - ./app/config/dashboard/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./app/config/dashboard/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
+      - ./app/config/dashboard:/var/lib/grafana/dashboards
       - grafana-data:/var/lib/grafana   # persists DB so home dashboard pref survives restarts
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
@@ -146,20 +146,54 @@ services:
       grafana:
         condition: service_healthy
     volumes:
-      - ./config/grafana-init.sh:/grafana-init.sh
+      - ./app/config/grafana-init.sh:/grafana-init.sh
     entrypoint: ["/bin/sh", "/grafana-init.sh"]
 
-  postgres:
+  app-postgres:
     image: pgvector/pgvector:pg16
     environment:
       - POSTGRES_DB=kapampangan
       - POSTGRES_USER=kapampangan
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - app-postgres-data:/var/lib/postgresql/data
+      - ./app/db/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kapampangan -d kapampangan"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  vocab-postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=kapampangan
+      - POSTGRES_USER=kapampangan
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - vocab-postgres-data:/var/lib/postgresql/data
+      - ./vocab/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kapampangan -d kapampangan"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  grammar-postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=kapampangan
+      - POSTGRES_USER=kapampangan
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - grammar-postgres-data:/var/lib/postgresql/data
+      - ./grammar/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kapampangan -d kapampangan"]
       interval: 5s
@@ -170,4 +204,6 @@ volumes:
   tempo-data:
   loki-data:
   grafana-data:
-  postgres-data:
+  app-postgres-data:
+  vocab-postgres-data:
+  grammar-postgres-data:

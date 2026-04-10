@@ -1,8 +1,10 @@
 """
-Database connection pool for the orchestration app.
+Database connection pool for the vocabulary MCP server.
 
-Call connect() at startup and disconnect() at shutdown.
-All other modules call pool() to obtain the active pool.
+Provides a module-level asyncpg pool created at app startup and
+closed at shutdown. Call connect() in the FastAPI lifespan and
+disconnect() on teardown. All other modules call pool() to get
+the active pool.
 """
 
 import asyncpg
@@ -24,7 +26,7 @@ async def connect() -> None:
             f"Database authentication failed — check POSTGRES_PASSWORD in .env "
             f"matches the DATABASE_URL password: {e}"
         ) from e
-    log.info("app db pool connected")
+    log.info("vocabulary db pool connected")
 
 
 async def disconnect() -> None:
@@ -32,7 +34,7 @@ async def disconnect() -> None:
     if _pool is not None:
         await _pool.close()
         _pool = None
-        log.info("app db pool closed")
+        log.info("vocabulary db pool closed")
 
 
 def pool() -> asyncpg.Pool:

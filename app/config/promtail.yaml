@@ -1,0 +1,51 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          # Only collect logs from this project's containers
+          - name: label
+            values: ["com.docker.compose.project=pampanginator"]
+    relabel_configs:
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+      - source_labels: [__meta_docker_container_name]
+        regex: /(.*)
+        target_label: container
+      - source_labels: [__meta_docker_container_log_stream]
+        target_label: stream
+      # Drop collector/infra container logs — keep only the three app services
+      - source_labels: [service]
+        regex: app|vocab|grammar
+        action: keep
+    pipeline_stages:
+      # Parse JSON log lines emitted by python-json-logger
+      - json:
+          expressions:
+            level: level
+            trace_id: trace_id
+            span_id: span_id
+            logger: logger
+            message: message
+      # Promote trace_id and level to Loki labels for fast filtering
+      - labels:
+          level:
+          trace_id:
+      # Normalise log level to lowercase so label values are consistent
+      - template:
+          source: level
+          template: '{{ ToLower .Value }}'
+      - labels:
+          level:

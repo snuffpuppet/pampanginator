@@ -1,8 +1,8 @@
 """
-Database connection pool for the orchestration app.
+Database connection pool for the grammar MCP server.
 
-Call connect() at startup and disconnect() at shutdown.
-All other modules call pool() to obtain the active pool.
+Same pattern as mcp-vocabulary/services/db.py. Call connect() at startup
+and disconnect() at shutdown. All other modules call pool() to get the pool.
 """
 
 import asyncpg
@@ -24,7 +24,7 @@ async def connect() -> None:
             f"Database authentication failed — check POSTGRES_PASSWORD in .env "
             f"matches the DATABASE_URL password: {e}"
         ) from e
-    log.info("app db pool connected")
+    log.info("grammar db pool connected")
 
 
 async def disconnect() -> None:
@@ -32,7 +32,7 @@ async def disconnect() -> None:
     if _pool is not None:
         await _pool.close()
         _pool = None
-        log.info("app db pool closed")
+        log.info("grammar db pool closed")
 
 
 def pool() -> asyncpg.Pool:

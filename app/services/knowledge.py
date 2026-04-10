@@ -6,9 +6,11 @@ Supports the admin Contributions tab (Decision 19).
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
+import httpx
 import yaml
 
 from services import db
@@ -16,6 +18,9 @@ from services import db
 log = logging.getLogger(__name__)
 
 KNOWLEDGE_SHARING_CONFIG_PATH = Path("/app/config/knowledge_sharing.yaml")
+
+VOCAB_URL = os.environ.get("VOCABULARY_SERVICE_URL", "http://vocab:8001")
+GRAMMAR_URL = os.environ.get("GRAMMAR_SERVICE_URL", "http://grammar:8002")
 
 
 def load_ks_config() -> dict:
@@ -31,42 +36,29 @@ def load_ks_config() -> dict:
 async def get_sync_status() -> dict:
     """
     Return sync status for the admin Sync Status view:
-    - Last seeded date (min created_at where seeded_from_canonical=true)
-    - Count of local additions (seeded_from_canonical=false)
+    - Last seeded date (from vocab service)
+    - Count of local additions (from vocab and grammar services)
     - Knowledge sharing mode
     """
-    pool = db.pool()
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        v_resp = await client.get(f"{VOCAB_URL}/admin/stats")
+        v_resp.raise_for_status()
+        vocab_stats = v_resp.json()
 
-    last_seed_row = await pool.fetchrow(
-        "SELECT MIN(created_at) FROM vocabulary WHERE seeded_from_canonical = TRUE"
-    )
-    last_seeded = last_seed_row[0].isoformat() if last_seed_row[0] else None
-
-    local_vocab_row = await pool.fetchrow(
-        "SELECT COUNT(*) FROM vocabulary WHERE seeded_from_canonical = FALSE"
-    )
-    local_vocab_count = local_vocab_row[0]
-
-    local_nodes_row = await pool.fetchrow(
-        "SELECT COUNT(*) FROM grammar_nodes WHERE seeded_from_canonical = FALSE"
-    )
-    local_nodes_count = local_nodes_row[0]
-
-    seeded_vocab_row = await pool.fetchrow(
-        "SELECT COUNT(*) FROM vocabulary WHERE seeded_from_canonical = TRUE"
-    )
-    seeded_vocab_count = seeded_vocab_row[0]
+        g_resp = await client.get(f"{GRAMMAR_URL}/admin/stats")
+        g_resp.raise_for_status()
+        grammar_stats = g_resp.json()
 
     config = load_ks_config()
 
     return {
         "mode": config.get("mode", "git"),
         "contributor_name": config.get("contributor_name", "unknown"),
-        "last_seeded": last_seeded,
-        "seeded_count": {"vocabulary": seeded_vocab_count},
+        "last_seeded": vocab_stats.get("last_seeded"),
+        "seeded_count": {"vocabulary": vocab_stats.get("seeded_count", 0)},
         "local_additions": {
-            "vocabulary": local_vocab_count,
-            "grammar_nodes": local_nodes_count,
+            "vocabulary": vocab_stats.get("local_additions", 0),
+            "grammar_nodes": grammar_stats.get("local_additions", 0),
         },
         "canonical_url": config.get("canonical_url", ""),
     }
@@ -97,7 +89,7 @@ async def get_pending_contributions() -> list[dict]:
 
 
 async def approve_contribution(contrib_id: str, reviewed_by: str | None = None) -> dict:
-    """Approve a pending contribution — write to vocabulary or grammar table."""
+    """Approve a pending contribution — forward to vocabulary or grammar service."""
     pool = db.pool()
     row = await pool.fetchrow(
         "SELECT * FROM pending_contributions WHERE id = $1::uuid", contrib_id
@@ -110,20 +102,15 @@ async def approve_contribution(contrib_id: str, reviewed_by: str | None = None) 
     authority_level = row["authority_level"]
 
     if contribution_type == "vocabulary":
-        # Insert into vocabulary — the MCP vocabulary server's add endpoint handles embedding
-        # Here we insert directly since this is a one-off admin action
-        import httpx
-        import os
-        vocab_url = os.environ.get("VOCABULARY_SERVICE_URL", "http://mcp-vocabulary:8001")
-        async with httpx.AsyncClient() as client:
-            payload["authority_level"] = authority_level
-            resp = await client.post(f"{vocab_url}/vocabulary", json=payload, timeout=30)
+        payload["authority_level"] = authority_level
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(f"{VOCAB_URL}/vocabulary", json=payload)
             if not resp.is_success:
                 raise RuntimeError(f"Vocabulary service rejected entry: {resp.text}")
 
     elif contribution_type == "grammar_node":
-        # Grammar nodes require embedding — insert via grammar MCP server when available,
-        # otherwise record for manual processing
+        # Grammar nodes require embedding — auto-apply via grammar service when
+        # POST /node is available. Currently recorded for manual processing.
         log.warning("grammar_node contribution approval not yet auto-applied",
                     extra={"id": contrib_id})
 
@@ -156,16 +143,10 @@ async def reseed_from_canonical() -> dict:
     Trigger a full reseed on both MCP servers by calling their /admin/reseed endpoints.
     Equivalent to running import_knowledge.py --mode full on each server.
     """
-    import httpx
-    import os
-
-    vocab_url = os.environ.get("VOCABULARY_SERVICE_URL", "http://mcp-vocabulary:8001")
-    grammar_url = os.environ.get("GRAMMAR_SERVICE_URL", "http://mcp-grammar:8002")
-
-    async with httpx.AsyncClient() as client:
-        v_resp = await client.post(f"{vocab_url}/admin/reseed", timeout=300)
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        v_resp = await client.post(f"{VOCAB_URL}/admin/reseed")
         v_resp.raise_for_status()
-        g_resp = await client.post(f"{grammar_url}/admin/reseed", timeout=300)
+        g_resp = await client.post(f"{GRAMMAR_URL}/admin/reseed")
         g_resp.raise_for_status()
 
     return {
@@ -177,72 +158,24 @@ async def reseed_from_canonical() -> dict:
 async def export_local_contributions(min_authority_level: int = 1,
                                      since: str | None = None) -> dict[str, Any]:
     """
-    Query local (non-seeded) vocabulary and grammar entries for export.
+    Fetch local (non-seeded) vocabulary and grammar entries from their respective services.
     Returns dict with vocabulary, grammar_nodes, grammar_edges lists.
     """
-    pool = db.pool()
-
-    vocab_conditions = ["seeded_from_canonical = FALSE", "authority_level <= $1"]
-    vocab_params: list = [min_authority_level]
+    params: dict[str, Any] = {"min_authority_level": min_authority_level}
     if since:
-        vocab_params.append(since)
-        vocab_conditions.append(f"created_at >= ${len(vocab_params)}::date")
+        params["since"] = since
 
-    vocab_rows = await pool.fetch(
-        f"""
-        SELECT term, meaning, part_of_speech, aspect_forms, examples,
-               usage_notes, authority_level, source, verified_by, notes, contributor, added_date
-        FROM vocabulary
-        WHERE {' AND '.join(vocab_conditions)}
-        ORDER BY added_date, term
-        """,
-        *vocab_params,
-    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        v_resp = await client.get(f"{VOCAB_URL}/admin/export", params=params)
+        v_resp.raise_for_status()
+        vocab_data = v_resp.json()
 
-    vocabulary = []
-    for row in vocab_rows:
-        entry: dict = {"term": row["term"], "meaning": row["meaning"]}
-        if row["part_of_speech"]: entry["part_of_speech"] = row["part_of_speech"]
-        if row["aspect_forms"]: entry["aspect_forms"] = json.loads(row["aspect_forms"])
-        if row["examples"]: entry["examples"] = json.loads(row["examples"])
-        if row["usage_notes"]: entry["usage_notes"] = row["usage_notes"]
-        entry["authority_level"] = row["authority_level"]
-        if row["source"]: entry["source"] = row["source"]
-        if row["verified_by"]: entry["verified_by"] = row["verified_by"]
-        if row["notes"]: entry["notes"] = row["notes"]
-        if row["contributor"]: entry["contributor"] = row["contributor"]
-        if row["added_date"]: entry["added_date"] = str(row["added_date"])
-        vocabulary.append(entry)
+        g_resp = await client.get(f"{GRAMMAR_URL}/admin/export", params=params)
+        g_resp.raise_for_status()
+        grammar_data = g_resp.json()
 
-    node_conditions = ["seeded_from_canonical = FALSE", "authority_level <= $1"]
-    node_params: list = [min_authority_level]
-    if since:
-        node_params.append(since)
-        node_conditions.append(f"added_date >= ${len(node_params)}::date")
-
-    node_rows = await pool.fetch(
-        f"""
-        SELECT id, type, label, meaning, embedding_text,
-               authority_level, source, verified_by, notes, contributor, added_date
-        FROM grammar_nodes
-        WHERE {' AND '.join(node_conditions)}
-        ORDER BY added_date, id
-        """,
-        *node_params,
-    )
-    grammar_nodes = [
-        {k: (str(v) if hasattr(v, "isoformat") else v) for k, v in dict(row).items() if v is not None}
-        for row in node_rows
-    ]
-
-    node_ids = [n["id"] for n in grammar_nodes]
-    grammar_edges: list[dict] = []
-    if node_ids:
-        edge_rows = await pool.fetch(
-            "SELECT from_node, relationship, to_node FROM grammar_edges "
-            "WHERE from_node = ANY($1) OR to_node = ANY($1) ORDER BY from_node",
-            node_ids,
-        )
-        grammar_edges = [dict(r) for r in edge_rows]
-
-    return {"vocabulary": vocabulary, "grammar_nodes": grammar_nodes, "grammar_edges": grammar_edges}
+    return {
+        "vocabulary": vocab_data.get("vocabulary", []),
+        "grammar_nodes": grammar_data.get("grammar_nodes", []),
+        "grammar_edges": grammar_data.get("grammar_edges", []),
+    }

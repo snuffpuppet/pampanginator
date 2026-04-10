@@ -1,0 +1,49 @@
+version: "3.9"
+
+# Isolated local dev for the vocab service only.
+# Brings up vocab + vocab-postgres. No other services are started.
+#
+# Usage (from repo root):
+#   docker compose -f vocab/docker-compose.dev.yml up
+
+services:
+
+  vocab:
+    build: ./vocab
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD:-kapampangan_dev}@vocab-postgres:5432/kapampangan
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4318}
+      - OTEL_SERVICE_NAME=kapampangan-vocab
+      - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
+      - ENVIRONMENT=development
+      - SERVICE_VERSION=0.1.0
+      - RESEED_ON_STARTUP=${RESEED_ON_STARTUP:-false}
+    volumes:
+      - ./vocab:/app
+      - ./vocab/data:/app/data:ro
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    depends_on:
+      vocab-postgres:
+        condition: service_healthy
+
+  vocab-postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=kapampangan
+      - POSTGRES_USER=kapampangan
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-kapampangan_dev}
+    volumes:
+      - vocab-postgres-dev-data:/var/lib/postgresql/data
+      - ./vocab/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kapampangan -d kapampangan"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  vocab-postgres-dev-data:

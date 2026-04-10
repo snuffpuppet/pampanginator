@@ -14,4 +14,18 @@ services:
       dockerfile: app/Dockerfile.test
     volumes:
       - ./app:/app          # live source — no rebuild needed after code changes
-      - ./config:/app/config  # system prompt / tools config (available but not called in unit tests)
+      - ./app/config:/app/config  # system prompt / tools config (available but not called in unit tests)
+
+  test-vocabulary:
+    build:
+      context: .
+      dockerfile: vocab/Dockerfile.test
+    volumes:
+      - ./vocab:/app  # live source — no rebuild needed after code changes
+
+  test-grammar:
+    build:
+      context: .
+      dockerfile: grammar/Dockerfile.test
+    volumes:
+      - ./grammar:/app  # live source — no rebuild needed after code changes

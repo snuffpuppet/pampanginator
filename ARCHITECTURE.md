@@ -25,33 +25,43 @@ The system is designed around three principles:
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Docker Compose                        │
-│                                                         │
-│  ┌──────────────┐     ┌──────────────────────────────┐  │
-│  │   React App  │────▶│   FastAPI Orchestration      │  │
-│  │  (frontend)  │     │   (app container)            │  │
-│  └──────────────┘     │                              │  │
-│                       │  - Assembles API calls       │  │
-│                       │  - Manages conversation      │  │
-│                       │    history (state)           │  │
-│                       │  - Routes tool calls         │  │
-│                       └──────────┬───────────────────┘  │
-│                                  │                      │
-│                    ┌─────────────┴──────────────┐       │
-│                    │                            │       │
-│          ┌─────────▼──────────┐   ┌─────────────▼────┐  │
-│          │  MCP Vocabulary    │   │  MCP Grammar     │  │
-│          │  Server            │   │  Graph Server    │  │
-│          │  (RAG / JSON)      │   │  (Knowledge      │  │
-│          │                    │   │   Graph)         │  │
-│          └────────────────────┘   └──────────────────┘  │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-                  LLM Backend
-                  (Anthropic / Ollama — stateless calls)
+┌──────────────────────────────────────────────────────────────┐
+│                       Docker Compose                          │
+│                                                              │
+│  ┌──────────────┐    ┌───────────────────────────────────┐   │
+│  │  React App   │───▶│   FastAPI Orchestration           │   │
+│  │  (frontend)  │    │   - Chat endpoint                 │   │
+│  │              │    │   - Interaction logging           │   │
+│  │  Chat UI     │    │   - Feedback capture              │   │
+│  │  Vocab page  │    │   - Conversation history          │   │
+│  │  Admin       │    │   - Tool routing (tools.yaml)     │   │
+│  └──────────────┘    └──────────┬────────────────────────┘   │
+│                                 │                            │
+│               ┌─────────────────┴──────────────┐            │
+│               │                                │            │
+│  ┌────────────▼───────────┐  ┌─────────────────▼──────┐     │
+│  │  MCP Vocabulary Server │  │  MCP Grammar Server    │     │
+│  │  - Semantic search     │  │  - Semantic search     │     │
+│  │    (pgvector)          │  │    (pgvector)          │     │
+│  │  - Authority filtering │  │  - Graph traversal     │     │
+│  │  - Add / update entry  │  │  - Two-stage retrieval │     │
+│  └────────────┬───────────┘  └──────────┬─────────────┘     │
+│               │                         │                    │
+│               └──────────┬──────────────┘                    │
+│                          │                                   │
+│               ┌──────────▼──────────────┐                    │
+│               │  PostgreSQL + pgvector   │                    │
+│               │  - vocabulary           │                    │
+│               │  - grammar_nodes        │                    │
+│               │  - grammar_edges        │                    │
+│               │  - interactions         │                    │
+│               │  - feedback             │                    │
+│               └─────────────────────────┘                    │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+                   Anthropic Claude API
 ```
 
 ---
@@ -392,7 +402,7 @@ The React frontend is built and served as static files by the FastAPI app contai
 (or via nginx in the same container). No separate container for the frontend in
 production.
 
-### Decision 11 — Two-mode operation: live reload in dev, container rebuild in prod
+### Decision 19 — Two-mode operation: live reload in dev, container rebuild in prod
 
 The system has two operating modes. Both are fully containerised — Node.js is not
 required on the host in either mode.
@@ -422,10 +432,10 @@ Dockerfile uses a multi-stage build: a Node.js stage compiles the frontend sourc
 into static files, which are copied into the Python runtime stage. No source mounts,
 no Vite dev server. The app container serves the built static files from `/app/frontend`.
 
-### Decision 12 — Observability stack: Grafana + Tempo + Prometheus
+### Decision 20 — Observability stack: Grafana + Tempo + Prometheus + Loki
 
-The observability stack consists of four containers: `otel-collector`, `tempo`,
-`prometheus`, and `grafana`.
+The observability stack consists of six containers: `otel-collector`, `tempo`,
+`prometheus`, `loki`, `promtail`, and `grafana`.
 
 Chosen over the Jaeger alternative referenced in the original architecture:
 - Tempo integrates natively with Grafana (same organisation, shared datasource
@@ -434,20 +444,24 @@ Chosen over the Jaeger alternative referenced in the original architecture:
   workloads; adding Tempo to the same Grafana instance costs no additional UI
   complexity
 - Jaeger is traces-only; metric/trace correlation requires additional tooling
+- Loki + Promtail adds structured log aggregation in the same Grafana instance,
+  completing traces + metrics + logs in a single UI without a separate stack
 
 Stack data flow:
 - FastAPI services export spans via OTLP HTTP to `otel-collector:4318`
 - The collector batches and forwards to `tempo:4317` (OTLP gRPC)
 - Services expose a `/metrics` endpoint; Prometheus scrapes them on their
   respective ports
-- Grafana reads from both Tempo (traces) and Prometheus (metrics), with
-  exemplars linking individual metric data points to their originating traces
+- Promtail tails container logs and ships them to `loki:3100`
+- Grafana reads from Tempo (traces), Prometheus (metrics), and Loki (logs),
+  with exemplars linking individual metric data points to their originating traces
 
-### Decision 13 — Infrastructure image versioning: pin minor versions, document upgrade path
+### Decision 21 — Infrastructure image versioning: pin minor versions, document upgrade path
 
 Third-party infrastructure images (`grafana/tempo`, `grafana/grafana`,
-`prom/prometheus`, `otel/opentelemetry-collector-contrib`) must be pinned to a
-specific version tag in `docker-compose.yml`. Using `latest` is prohibited.
+`grafana/loki`, `grafana/promtail`, `prom/prometheus`,
+`otel/opentelemetry-collector-contrib`) must be pinned to a specific version tag
+in `docker-compose.yml`. Using `latest` is prohibited.
 
 Rationale: `grafana/tempo:latest` resolved to 2.10.3 which introduced a
 default-on Kafka ingestion path, breaking startup without config changes. This
@@ -468,6 +482,12 @@ kapampangan-tutor/
 │
 ├── docker-compose.yml              # Service definitions
 │
+├── db/
+│   └── init.sql                    # PostgreSQL schema — run on first startup
+│
+├── scripts/
+│   └── export_training_data.py     # Training data export script
+│
 ├── config/
 │   ├── llm.yaml                    # LLM backend selection and capabilities (declarative)
 │   ├── tools.yaml                  # MCP tool definitions and routing (declarative)
@@ -475,6 +495,8 @@ kapampangan-tutor/
 │   ├── otel-collector.yaml         # OTel collector pipeline config
 │   ├── tempo.yaml                  # Tempo trace storage config
 │   ├── prometheus.yaml             # Prometheus scrape targets
+│   ├── loki.yaml                   # Loki log aggregation config
+│   ├── promtail.yaml               # Promtail log shipping config
 │   └── dashboard/                  # Grafana provisioning and dashboard JSON
 │
 ├── app/                            # Container 1 — Orchestration + Frontend
@@ -485,10 +507,14 @@ kapampangan-tutor/
 │   ├── middleware.py               # Request duration/count middleware
 │   ├── routes/
 │   │   ├── chat.py                 # /chat endpoint — handles conversation turns
+│   │   ├── feedback.py             # /feedback endpoint
+│   │   ├── vocab.py                # /vocabulary endpoints
 │   │   └── health.py               # /health endpoint
 │   ├── services/
 │   │   ├── llm.py                  # Agentic loop — reads llm.yaml, dispatches to configured backend
 │   │   ├── tool_router.py          # Reads tools.yaml, routes tool calls to MCP servers
+│   │   ├── interactions.py         # Interaction logging service
+│   │   ├── feedback.py             # Feedback capture and review service
 │   │   └── history.py              # Conversation history management
 │   ├── models/
 │   │   └── schemas.py              # Pydantic data models
@@ -501,6 +527,7 @@ kapampangan-tutor/
 │   ├── routes/
 │   │   └── lookup.py               # /lookup/{term} endpoint
 │   ├── services/
+│   │   ├── embeddings.py           # sentence-transformer embedding service
 │   │   └── index.py                # Loads and searches the vocabulary JSON
 │   ├── data/
 │   │   └── vocabulary.json         # Kapampangan vocabulary store
@@ -512,6 +539,7 @@ kapampangan-tutor/
 │   ├── routes/
 │   │   └── traverse.py             # /traverse endpoint
 │   ├── services/
+│   │   ├── embeddings.py           # sentence-transformer embedding service
 │   │   └── graph.py                # Loads graph, executes traversal queries
 │   ├── data/
 │   │   └── grammar_graph.json      # Kapampangan grammar knowledge graph
@@ -634,6 +662,21 @@ services:
       - "8002:8002"
     volumes:
       - ./mcp-grammar/data:/app/data      # Mount data so grammar graph can be updated without rebuild
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=kapampangan
+      - POSTGRES_USER=kapampangan
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres-data:
 ```
 
 Key design choice: config and data directories are **mounted as volumes**, not baked
@@ -645,7 +688,7 @@ rebuilding the image. This honours the independent lifecycle principle.
 
 ## Observability
 
-Implemented. See Decision 12 for stack rationale and Decision 13 for image
+Implemented. See Decision 20 for stack rationale and Decision 21 for image
 versioning policy.
 
 Each MCP server call, LLM backend call, and vocabulary/grammar lookup is a
@@ -863,22 +906,406 @@ LLM backend → response rendered. End-to-end latency is visible in one view.
 
 ---
 
+### Decision 11 — PostgreSQL with pgvector as the single persistence layer
+
+All persistent storage is consolidated into a single PostgreSQL instance with
+the pgvector extension. This replaces the previously proposed combination of
+JSON files, ChromaDB, and SQLite.
+
+**What PostgreSQL + pgvector handles:**
+- Vocabulary entries with vector embeddings for semantic search
+- Grammar graph nodes and edges with vector embeddings for semantic search
+- Interaction history (every conversation turn with full context)
+- Feedback records (thumbs up/down, corrections, authority level)
+- Training data export queries
+
+**Why consolidation:**
+
+Running ChromaDB for embeddings, SQLite for feedback, and JSON files for
+vocabulary would require three separate storage systems with three separate
+backup strategies, three separate volume mounts, and three separate failure
+modes. PostgreSQL with pgvector provides all capabilities in one service that
+is well-understood, production-proven, and straightforward to operate.
+
+**pgvector specifically:**
+
+pgvector adds native vector similarity search to PostgreSQL. It supports
+cosine similarity search over embedding columns, meaning semantic lookup
+and relational queries run in the same database against the same data with
+standard SQL. No separate vector database service is required.
+
+**Docker Compose addition:**
+
+```yaml
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=kapampangan
+      - POSTGRES_USER=kapampangan
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres-data:
+```
+
+All three application services connect to this instance. The MCP servers
+access their respective tables. The orchestration layer accesses the
+interaction and feedback tables.
+
+---
+
+### Decision 12 — Semantic vector search for vocabulary and grammar
+
+Both the vocabulary MCP server and the grammar MCP server use semantic vector
+search rather than exact keyword matching. This is a fundamental requirement
+for a language learning tool where users are by definition imprecise in their
+input.
+
+**The problem with exact match:**
+
+A user asking "how do I say I'm starving" will not match a vocabulary entry
+keyed on "hungry". A user asking "what's the past tense of mangan" may not
+match a grammar node described as "completed aspect". Learners use varied,
+imprecise, English-centric language to ask about Kapampangan. Exact match
+fails them systematically.
+
+**The solution:**
+
+Each vocabulary entry and grammar graph node has an `embedding` column
+(vector type via pgvector). At indexing time, a rich descriptive text is
+embedded using a local sentence-transformer model. At query time, the query
+is embedded with the same model and a cosine similarity search returns the
+closest entries.
+
+**Embedding model:**
+
+`sentence-transformers/all-MiniLM-L6-v2` runs locally inside each MCP
+server container. No external API dependency for retrieval. The model is
+80MB, fast, and produces good semantic similarity for English queries
+against English-described Kapampangan entries.
+
+**Vocabulary embedding text format:**
+
+```
+{term} — {english_meaning}. {usage_notes}. Examples: {example_sentences}.
+Also expressed as: {synonyms_and_variations}.
+```
+
+**Grammar node embedding text format:**
+
+```
+{id} — {linguistic_label}. {plain_english_description}.
+Used when: {usage_context}. Related to: {related_forms}.
+Example: {example_sentence}.
+```
+
+The embedding text is designed to match the natural language ways a user
+or the agent might describe what they are looking for — not just the
+linguistic label.
+
+---
+
+### Decision 13 — Two-stage retrieval for the grammar graph
+
+The grammar MCP server uses a two-stage retrieval pattern that is distinct
+from the single-stage semantic search used by the vocabulary server.
+
+**Stage 1 — Semantic entry point:**
+
+Embed the query and find the semantically closest grammar nodes. This
+answers: what part of the grammar is this question about? Returns candidate
+nodes ranked by cosine similarity.
+
+**Stage 2 — Graph traversal from the entry point:**
+
+From the retrieved node, traverse the edge relationships in the grammar
+graph. This answers: what relational context does the LLM also need?
+
+If stage 1 returns the node *mengan* (completed aspect of mangan), stage 2
+traverses to return: the root *mangan*, its aspect siblings (*mamangan*,
+*mangan* progressive), its focus type (actor focus), and any derived nouns.
+
+**Why both stages are necessary:**
+
+Semantic search finds the right neighbourhood. Graph traversal provides
+the relational structure within it. Returning a single matched node in
+isolation misses the point — the LLM needs to understand where that node
+sits in the grammar structure to reason correctly about it. The graph
+traversal in stage 2 is what produces genuinely useful grammatical context
+rather than just a single retrieved fact.
+
+**PostgreSQL schema for the grammar graph:**
+
+```sql
+CREATE TABLE grammar_nodes (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    label TEXT,
+    meaning TEXT,
+    embedding_text TEXT NOT NULL,
+    embedding vector(384),
+    authority_level INTEGER DEFAULT 3,
+    source TEXT,
+    verified_by TEXT,
+    verified_date DATE,
+    notes TEXT
+);
+
+CREATE TABLE grammar_edges (
+    from_node TEXT REFERENCES grammar_nodes(id),
+    relationship TEXT NOT NULL,
+    to_node TEXT REFERENCES grammar_nodes(id),
+    PRIMARY KEY (from_node, relationship, to_node)
+);
+
+CREATE INDEX ON grammar_nodes
+    USING ivfflat (embedding vector_cosine_ops);
+```
+
+---
+
+### Decision 14 — Authority levels as a first-class data property
+
+Every entry in the vocabulary table and every node in the grammar graph
+carries an authority level. The system treats sources with different levels
+of trust differently — both in retrieval preference and in the confidence
+the LLM expresses in its responses.
+
+**Authority hierarchy:**
+
+| Level | Source | Description |
+|---|---|---|
+| 1 | Native speaker verified | Confirmed by a fluent native speaker in direct interaction |
+| 2 | Linguistic / academic source | Published grammar references, academic papers |
+| 3 | Community sources | Phrasebooks, language learning sites, community contributions |
+| 4 | LLM inference | Generated by the model from rules, not verified by any source |
+
+**How authority level influences system behaviour:**
+
+- When multiple entries are retrieved for a query, Level 1 entries are
+  returned first and weighted higher in the context presented to the LLM
+- The system prompt instructs the LLM to express confidence proportional
+  to the authority level of the information it is drawing from
+- Level 1 grammar nodes override rule application unconditionally — the
+  LLM does not attempt to generate a form when a verified form exists
+- Level 4 entries (LLM-inferred) are flagged as unverified in responses
+  and the system explicitly invites correction
+
+**Schema addition (both vocabulary and grammar_nodes tables):**
+
+```sql
+authority_level INTEGER DEFAULT 3 CHECK (authority_level BETWEEN 1 AND 4),
+source TEXT,
+verified_by TEXT,
+verified_date DATE,
+notes TEXT
+```
+
+---
+
+### Decision 15 — Interaction logging and feedback capture
+
+Every conversation turn is logged to PostgreSQL with full context. This
+serves two purposes: immediate quality improvement through correction
+capture, and long-term accumulation of training data for potential
+model fine-tuning.
+
+**Why full context logging matters:**
+
+A correction is only useful as training data if you know what information
+the model had access to when it produced the output. Logging the retrieved
+vocabulary entries, grammar nodes, authority levels, model version, and
+system prompt version alongside the input and output means every record is
+self-contained and interpretable without needing to reconstruct the context.
+
+**Interaction schema:**
+
+```sql
+CREATE TABLE interactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID NOT NULL,
+    timestamp TIMESTAMPTZ DEFAULT NOW(),
+    scenario TEXT,
+    user_message TEXT NOT NULL,
+    system_prompt_version TEXT NOT NULL,
+    model TEXT NOT NULL,
+    tools_used TEXT[],
+    vocabulary_entries_retrieved JSONB,
+    grammar_nodes_retrieved JSONB,
+    authority_levels_used INTEGER[],
+    llm_response TEXT NOT NULL,
+    kapampangan_produced TEXT,
+    english_gloss TEXT
+);
+
+CREATE TABLE feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    interaction_id UUID REFERENCES interactions(id),
+    timestamp TIMESTAMPTZ DEFAULT NOW(),
+    rating TEXT CHECK (rating IN ('thumbs_up', 'thumbs_down')),
+    correction_kapampangan TEXT,
+    correction_english TEXT,
+    correction_note TEXT,
+    corrected_by TEXT,
+    authority_level INTEGER DEFAULT 3,
+    reviewed BOOLEAN DEFAULT FALSE,
+    applied BOOLEAN DEFAULT FALSE
+);
+```
+
+**Feedback workflow:**
+
+1. User rates a response (thumbs up or thumbs down)
+2. On thumbs down, optionally provides correction and context
+3. Record is written to the feedback table with `reviewed = false`
+4. Admin review queue surfaces unreviewed corrections
+5. On approval, the correction is written to vocabulary or grammar data
+   with the specified authority level and `applied = true`
+
+Corrections are never auto-applied without human review. The review step
+preserves data quality by keeping human judgement in the loop.
+
+---
+
+### Decision 16 — Training data export
+
+The interaction and feedback tables are designed from the start to support
+training data export for potential future model fine-tuning.
+
+**Storage format:**
+
+All data is stored in raw interaction format, not in training format.
+Training formats (SFT jsonl, DPO preference pairs) are produced at export
+time by a script. This preserves flexibility — training formats change
+depending on the model and fine-tuning approach, but raw data can be
+exported to any format.
+
+**Export filters:**
+
+Only reviewed and applied feedback is eligible for training data export.
+Unreviewed interactions are excluded. Authority level filtering ensures
+only sufficiently verified data enters the training corpus.
+
+**Two export formats:**
+
+Supervised fine-tuning (SFT) — confirmed correct response pairs:
+```json
+{"prompt": "How do I say I haven't eaten yet?",
+ "response": "E ku pa mangan."}
+```
+
+Preference fine-tuning (DPO) — correct vs rejected pairs from corrections:
+```json
+{"prompt": "How do I say I haven't eaten yet?",
+ "chosen": "E ku pa mangan.",
+ "rejected": "E ku pa mengan."}
+```
+
+Export script: `scripts/export_training_data.py`
+
+```
+python scripts/export_training_data.py \
+    --min_authority_level 1 \
+    --format dpo \
+    --output training_data.jsonl
+```
+
+---
+
+### Decision 17 — Vocabulary page (user-facing)
+
+A vocabulary lookup and contribution page accessible to all users of the
+application. Not admin-only — vocabulary contribution is a first-class
+user feature.
+
+**Lookup behaviour:**
+
+- Semantic search using the same pgvector similarity search as the MCP server
+- Returns exact matches first, then semantically related entries
+- When no exact match exists, shows near-miss results with an invitation to add
+- Each entry shows: Kapampangan term, English meaning, aspect forms (for verbs),
+  example sentences, authority level indicator, and thumbs up/down controls
+
+**Near-miss display:**
+
+```
+No exact match for "famished"
+
+Related entries:
+  gutom — hungry, desire for food          [Level 1] [👍 👎]
+  mangan — to eat                          [Level 1] [👍 👎]
+
+  [+ Add "famished" to vocabulary]
+```
+
+**Add entry form fields:**
+
+- Kapampangan term (required)
+- English meaning (required)
+- Part of speech (verb / noun / adjective / phrase)
+- Aspect forms: progressive, completed, contemplated (verbs only)
+- Example sentence in Kapampangan
+- English gloss of example
+- Usage notes and cultural context
+- Source: native speaker / reference source / inferred
+
+**On submission:**
+
+1. Entry is written to the vocabulary PostgreSQL table
+2. Embedding is generated immediately using the local sentence-transformer
+3. Entry is immediately searchable — no restart required
+4. If source is native speaker, authority level is set to 1
+
+---
+
+### Decision 18 — Admin interface
+
+A protected section of the React application for data quality management.
+Access restricted — not part of the main user flow.
+
+**Three views:**
+
+**Correction review queue** — lists all feedback records where
+`reviewed = false`. For each: the original user message, the LLM response,
+the proposed correction, the correction note, and the proposed authority
+level. Actions: approve (writes to vocabulary/grammar, sets `applied = true`),
+reject (sets `reviewed = true`, `applied = false`), edit before approving.
+
+**Feedback history** — searchable log of all feedback with filters for
+rating, authority level, date range, and applied status.
+
+**Training data export** — form interface for the export script with format
+selection (SFT / DPO), minimum authority level filter, date range, and
+download of the resulting JSONL file.
+
+---
+
 ## Build Order for Claude Code
 
 Suggested implementation sequence:
 
-1. Scaffold Docker Compose with three empty service containers
-2. Build MCP Vocabulary Server — load JSON, expose `/lookup` endpoint, write Pydantic schemas
-3. Build MCP Grammar Graph Server — load graph JSON, expose `/traverse` endpoint
-4. Build FastAPI orchestration layer — read `tools.yaml` and `llm.yaml`, assemble LLM API calls, route tool results
-5. Connect conversation history management
-6. Scaffold React frontend — create layer structure: `store/`, `services/`, `components/`
-7. Implement `api.js` service layer — single fetch call to `/chat`
-8. Implement Zustand store — `sendMessage`, `setScenario`, `clearConversation` actions
-9. Implement components as pure display functions reading from store
-10. Load `ui.yaml` in `App.jsx` — render scenarios dynamically
-11. Wire Docker Compose volumes for config and data
-12. End-to-end test: user message → tool call → MCP response → LLM response → UI
+1.  Write PostgreSQL schema to `db/init.sql`
+2.  Add postgres service to Docker Compose
+3.  Scaffold empty app, mcp-vocabulary, mcp-grammar containers
+4.  Build embedding service (sentence-transformers) — shared pattern for both MCP servers
+5.  Build MCP Vocabulary Server — pgvector semantic search, authority filtering, add entry endpoint
+6.  Build MCP Grammar Graph Server — pgvector semantic search, two-stage retrieval, graph traversal
+7.  Build FastAPI orchestration layer — tool routing, interaction logging, feedback capture
+8.  Build conversation history management
+9.  Build feedback endpoints — POST /feedback, GET /feedback/pending, POST /feedback/:id/approve
+10. Build vocabulary endpoints — GET /vocabulary/search, POST /vocabulary
+11. Scaffold React frontend — layer structure: store/, services/, components/
+12. Build chat UI with thumbs up/down on every LLM response
+13. Build vocabulary page — semantic search, near-miss display, add entry form
+14. Build admin interface — correction review queue, feedback history, export tool
+15. Write training data export script
+16. Wire all Docker Compose volumes for config and data
+17. End-to-end test: message → tool calls → MCP retrieval → LLM response → feedback capture → admin review → vocabulary update
 
 ---
 

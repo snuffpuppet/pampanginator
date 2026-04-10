@@ -34,6 +34,31 @@ GET  /admin/stats              — seeded/local counts for sync status
 GET  /admin/export             — export local additions as JSON
 GET  /health
 
+## Running this service
+
+### Standalone (from mcp-vocabulary/)
+    make up          # mcp-vocabulary + vocab-postgres
+    make down
+    make logs
+    make shell       # bash in running container
+
+Port: :8001. Postgres: :5433 (host) → :5432 (container).
+No other services are required.
+
+### Full stack (from repo root)
+    make up          # all services — delegates to each sub-project's docker-compose.yml
+    make up-vocab    # only this service (delegates to mcp-vocabulary/Makefile)
+
+### Environment
+Key defaults (see ../.env.example for all variables):
+    POSTGRES_PASSWORD=kapampangan_dev
+    RESEED_ON_STARTUP=false
+
+### Tests
+    make test        # run vocabulary test suite in Docker
+    make test-fast   # stop on first failure
+    make test-build  # rebuild test image after requirements change
+
 ## Architecture decisions most relevant to this service
 Decisions 3a, 4, 5, 11, 12, 14, 19
 Full architecture: ../ARCHITECTURE.md

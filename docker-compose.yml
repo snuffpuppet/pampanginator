@@ -1,68 +1,23 @@
-version: "3.9"
+# Root compose delegates to each service's own docker-compose.yml via include:.
+# This ensures 'make up' at the root follows the same execution path as
+# 'make up' inside each service directory.
+#
+# The observability stack is defined here — it is a root-level concern shared
+# across all services and has no standalone equivalent.
+#
+# Usage:
+#   make up              # full dev stack (all services + observability)
+#   make up-app          # app service only  (delegates to app/Makefile)
+#   make up-vocab        # vocab service only
+#   make up-grammar      # grammar service only
+#   docker compose --profile frontend up   # full stack + Vite dev server
+
+include:
+  - app/docker-compose.yml
+  - mcp-vocabulary/docker-compose.yml
+  - mcp-grammar/docker-compose.yml
 
 services:
-
-  app:
-    build:
-      context: .
-      dockerfile: app/Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - BACKEND=${BACKEND:-openrouter}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}
-      - VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001
-      - GRAMMAR_SERVICE_URL=http://mcp-grammar:8002
-      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@app-postgres:5432/kapampangan
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
-      - OTEL_SERVICE_NAME=kapampangan-app
-      - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
-      - ENVIRONMENT=development
-      - SERVICE_VERSION=0.1.0
-    volumes:
-      - ./app/config:/app/config        # Mount so prompt/tools changes take effect on restart
-    depends_on:
-      - mcp-vocabulary
-      - mcp-grammar
-      - app-postgres
-      - otel-collector
-
-  mcp-vocabulary:
-    build: ./mcp-vocabulary
-    ports:
-      - "8001:8001"
-    environment:
-      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@vocab-postgres:5432/kapampangan
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
-      - OTEL_SERVICE_NAME=kapampangan-mcp-vocabulary
-      - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
-      - ENVIRONMENT=development
-      - SERVICE_VERSION=0.1.0
-      - RESEED_ON_STARTUP=${RESEED_ON_STARTUP:-false}
-    volumes:
-      - ./mcp-vocabulary/data:/app/data:ro       # canonical knowledge base — read-only
-    depends_on:
-      - vocab-postgres
-      - otel-collector
-
-  mcp-grammar:
-    build: ./mcp-grammar
-    ports:
-      - "8002:8002"
-    environment:
-      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@grammar-postgres:5432/kapampangan
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
-      - OTEL_SERVICE_NAME=kapampangan-mcp-grammar
-      - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
-      - ENVIRONMENT=development
-      - SERVICE_VERSION=0.1.0
-      - RESEED_ON_STARTUP=${RESEED_ON_STARTUP:-false}
-    volumes:
-      - ./mcp-grammar/data:/app/data:ro     # canonical knowledge base — read-only
-    depends_on:
-      - grammar-postgres
-      - otel-collector
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.149.0
@@ -105,7 +60,7 @@ services:
       - ./app/config/loki.yaml:/etc/loki.yaml
       - loki-data:/loki
     ports:
-      - "3100:3100"   # Loki query API (optional — useful for curl debugging)
+      - "3100:3100"   # Loki query API
 
   promtail:
     image: grafana/promtail:3.3.2
@@ -121,14 +76,14 @@ services:
     ports:
       - "3000:3000"   # Grafana UI — http://localhost:3000
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     volumes:
       - ./app/config/dashboard/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
       - ./app/config/dashboard/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
       - ./app/config/dashboard:/var/lib/grafana/dashboards
-      - grafana-data:/var/lib/grafana   # persists DB so home dashboard pref survives restarts
+      - grafana-data:/var/lib/grafana
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 5s
@@ -149,61 +104,7 @@ services:
       - ./app/config/grafana-init.sh:/grafana-init.sh
     entrypoint: ["/bin/sh", "/grafana-init.sh"]
 
-  app-postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      - POSTGRES_DB=kapampangan
-      - POSTGRES_USER=kapampangan
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    volumes:
-      - app-postgres-data:/var/lib/postgresql/data
-      - ./app/db/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kapampangan -d kapampangan"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  vocab-postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      - POSTGRES_DB=kapampangan
-      - POSTGRES_USER=kapampangan
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    volumes:
-      - vocab-postgres-data:/var/lib/postgresql/data
-      - ./mcp-vocabulary/db/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kapampangan -d kapampangan"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  grammar-postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      - POSTGRES_DB=kapampangan
-      - POSTGRES_USER=kapampangan
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    volumes:
-      - grammar-postgres-data:/var/lib/postgresql/data
-      - ./mcp-grammar/db/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5434:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kapampangan -d kapampangan"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
 volumes:
   tempo-data:
   loki-data:
   grafana-data:
-  app-postgres-data:
-  vocab-postgres-data:
-  grammar-postgres-data:

@@ -1,21 +1,23 @@
 version: "3.9"
 
 # Isolated local dev for the app service only.
-# Brings up app + app-postgres. vocab and grammar are not started — override
-# VOCABULARY_SERVICE_URL and GRAMMAR_SERVICE_URL if those services are needed.
+# Brings up app + app-postgres. MCP services are not started — the app starts
+# without them; vocabulary/grammar calls will fail until those services are running.
+# Start them independently: cd ../mcp-vocabulary && make up (port 8001)
+#                            cd ../mcp-grammar && make up (port 8002)
 #
-# Usage (from repo root):
-#   docker compose -f app/docker-compose.dev.yml up
-#
-# Or with live frontend dev server on :5173:
-#   docker compose -f app/docker-compose.dev.yml --profile frontend up
+# Usage (from app/):
+#   docker compose up              # API + postgres
+#   docker compose --profile frontend up   # + Vite dev server on :5173
+#   make up
+#   make up-frontend
 
 services:
 
   app:
     build:
       context: .
-      dockerfile: app/Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
       - "8000:8000"
     environment:
@@ -31,19 +33,19 @@ services:
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
     volumes:
-      - ./app:/app
-      - ./app/config:/app/config
+      - .:/app
+      - ./config:/app/config
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       app-postgres:
         condition: service_healthy
 
-  frontend-dev:
+  frontend:
     image: node:20-alpine
     profiles: ["frontend"]
     working_dir: /app
     volumes:
-      - ./app/frontend:/app
+      - ./frontend:/app
       - frontend-node-modules:/app/node_modules
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     ports:
@@ -64,7 +66,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-kapampangan_dev}
     volumes:
       - app-postgres-dev-data:/var/lib/postgresql/data
-      - ./app/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
     healthcheck:

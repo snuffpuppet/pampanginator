@@ -17,6 +17,41 @@
 app-postgres — tables: interactions, feedback, sessions, pending_contributions
 Schema: app/db/init.sql
 
+## Running this service
+
+### Standalone (from app/)
+    make up              # app API + app-postgres
+    make up-frontend     # + Vite dev server on :5173
+    make down
+    make logs
+    make shell           # bash in running container
+
+Ports: app API :8000, Vite frontend :5173, app-postgres :5432
+
+MCP services are optional when running standalone — vocabulary/grammar calls
+will fail until those services are up. To connect to them start each
+independently (they bind to host ports 8001 and 8002):
+    cd ../mcp-vocabulary && make up
+    cd ../mcp-grammar && make up
+
+### Full stack (from repo root)
+    make up              # all services — delegates to each sub-project's docker-compose.yml
+    make frontend        # same + Vite dev server on :5173
+    make up-app          # only this service (delegates to app/Makefile)
+
+### Environment
+Required: OPENROUTER_API_KEY
+Key defaults (see ../.env.example for all variables):
+    POSTGRES_PASSWORD=kapampangan_dev
+    VOCABULARY_SERVICE_URL=http://host.docker.internal:8001
+    GRAMMAR_SERVICE_URL=http://host.docker.internal:8002
+    BACKEND=openrouter
+
+### Tests
+    make test            # run app test suite in Docker
+    make test-fast       # stop on first failure
+    make test-build      # rebuild test image after requirements change
+
 ## Architecture decisions most relevant to this service
 Decisions 1, 2, 3, 3a, 6, 7, 8, 9, 10, 15, 16, 17, 18, 19
 Full architecture: ../ARCHITECTURE.md

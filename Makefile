@@ -5,7 +5,9 @@ TEST_COMPOSE      := docker compose -f docker-compose.test.yml --env-file /dev/n
 TEST_COMPOSE_VOCAB   := docker compose -f mcp-vocabulary/docker-compose.yml --env-file /dev/null -p pampanginator-mcp-vocabulary-test
 TEST_COMPOSE_GRAMMAR := docker compose -f mcp-grammar/docker-compose.test.yml --env-file /dev/null -p pampanginator-grammar-test
 
-.PHONY: test test-fast test-build test-vocab test-grammar test-all up down build
+.PHONY: test test-fast test-build test-vocab test-grammar test-all up down build frontend \
+        up-app up-vocab up-grammar down-app down-vocab down-grammar \
+        logs-app logs-vocab logs-grammar
 
 ## Run the app unit-test suite inside Docker (builds image on first run)
 test:
@@ -36,11 +38,57 @@ test-all:
 ## Start the full dev stack
 up:
 	$(COMPOSE) up -d
+	$(MAKE) -C app up
+	$(MAKE) -C mcp-vocabulary up
+	$(MAKE) -C mcp-grammar up
+
+## Start the full dev stack including the Vite frontend dev server (:5173)
+frontend:
+	$(COMPOSE) --profile frontend up -d
 
 ## Stop the dev stack
 down:
 	$(COMPOSE) down
+	$(MAKE) -C app down
+	$(MAKE) -C mcp-vocabulary down
+	$(MAKE) -C mcp-grammar down
 
-## Stop the dev stack
+## Build the full dev stack
 build:
 	$(COMPOSE) build
+
+## Start only the app service (standalone dev)
+up-app:
+	$(MAKE) -C app up
+
+## Start only the vocabulary service (standalone dev)
+up-vocab:
+	$(MAKE) -C mcp-vocabulary up
+
+## Start only the grammar service (standalone dev)
+up-grammar:
+	$(MAKE) -C mcp-grammar up
+
+## Stop only the app service
+down-app:
+	$(MAKE) -C app down
+
+## Stop only the vocabulary service
+down-vocab:
+	$(MAKE) -C mcp-vocabulary down
+
+## Stop only the grammar service
+down-grammar:
+	$(MAKE) -C mcp-grammar down
+
+## Follow logs for the app service
+logs-app:
+	$(MAKE) -C app logs
+
+## Follow logs for the vocabulary service
+logs-vocab:
+	$(MAKE) -C mcp-vocabulary logs
+
+## Follow logs for the grammar service
+logs-grammar:
+	$(MAKE) -C mcp-grammar logs

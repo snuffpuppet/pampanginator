@@ -1,0 +1,33 @@
+# Knowledge sharing configuration — Decision 19
+#
+# Three operational modes:
+#   git       — canonical files live in this repository (default, recommended)
+#   sync      — canonical files hosted at a URL; contributors package and send exports
+#   shared_db — all instances share a cloud PostgreSQL instance
+#
+# Changing mode requires only configuration changes, not schema changes.
+
+# ── Mode ───────────────────────────────────────────────────────────────────────
+mode: git
+
+# ── Identity ───────────────────────────────────────────────────────────────────
+# This instance's contributor identifier. Tags locally added entries in exports.
+contributor_name: "adam"
+
+# ── Reseeding ──────────────────────────────────────────────────────────────────
+# Set to true to reseed the database from data/ on every container restart.
+# Overrides the RESEED_ON_STARTUP environment variable if set here to true.
+# Useful in Mode 1 and Mode 2 after pulling updated canonical files.
+reseed_on_startup: false
+
+# ── Mode 2 only ────────────────────────────────────────────────────────────────
+# URL of the hosted canonical knowledge files.
+# Expects vocabulary.json, grammar_nodes.json, grammar_edges.json at this base URL.
+# Example: https://raw.githubusercontent.com/user/repo/main/data/
+# canonical_url: ""
+
+# ── Mode 3 only ────────────────────────────────────────────────────────────────
+# Connection string for the shared cloud PostgreSQL instance.
+# shared_db_url: ""
+# Per-contributor API key for the shared instance.
+# shared_db_api_key: ""

@@ -6,6 +6,7 @@ is a configuration change in config/llm.yaml, not a code change. The agentic
 tool-call loop runs for both backends when tools_enabled is true.
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -32,9 +33,10 @@ _backend: dict = {}
 _client: anthropic.AsyncAnthropic | None = None
 _system_prompt: str | None = None
 
-# Set during init(); used by routes for metric labels.
+# Set during init(); used by routes for metric labels and interaction logging.
 ACTIVE_BACKEND: str = ""
 ACTIVE_MODEL: str = ""
+SYSTEM_PROMPT_VERSION: str = ""  # first 8 hex chars of SHA-256 of the system prompt
 
 
 def init(
@@ -67,6 +69,7 @@ def init(
     _system_prompt = Path(system_prompt_path).read_text(encoding="utf-8")
     ACTIVE_BACKEND = active
     ACTIVE_MODEL = _backend["model"]
+    SYSTEM_PROMPT_VERSION = hashlib.sha256(_system_prompt.encode()).hexdigest()[:8]
 
 
 async def complete(messages: list[dict], session_id: str = "") -> tuple[str, list[str]]:

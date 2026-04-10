@@ -1,15 +1,18 @@
 """
 MCP Grammar Graph Server
 
-Loads the Kapampangan grammar knowledge graph at startup and exposes
-HTTP endpoints for graph traversal queries.
+Connects to PostgreSQL at startup, loads the sentence-transformer embedding
+model, and exposes HTTP endpoints for two-stage grammar retrieval:
+  Stage 1 — semantic search via pgvector cosine similarity
+  Stage 2 — graph traversal from the matched entry nodes via grammar_edges
 """
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from routes.traverse import router as traverse_router
-from services.graph import load
+from routes.admin import router as admin_router
+from services import embeddings, db, seed
 from telemetry import init_telemetry
 from metrics import metrics_endpoint
 from middleware import MetricsMiddleware
@@ -20,25 +23,26 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    load()
+    embeddings.load()
+    await db.connect()
+    await seed.seed_if_needed()
     yield
+    await db.disconnect()
 
 
 app = FastAPI(
     title="Kapampangan Grammar MCP",
     description=(
         "Grammar knowledge graph server for the Kapampangan language tutor. "
-        "Loads a JSON graph of verb roots, aspect forms, focus types, pronouns, "
-        "case markers, and other grammatical structures, and exposes it for traversal.\n\n"
-        "Valid `root` values: a Kapampangan verb root (`mangan`, `sulat`, `basa`) "
-        "or a concept ID (`actor_focus`, `progressive_aspect`, `case_system`, "
-        "`absolutive_pronouns`, `ergative_pronouns`, `vso_word_order`, …).\n\n"
+        "Uses two-stage retrieval: pgvector semantic search finds the closest "
+        "grammar nodes, then graph traversal via grammar_edges returns the full "
+        "relational context (aspect siblings, focus type, derived forms).\n\n"
         "Called by the orchestration layer's agentic tool loop. "
         "Can also be queried directly here for manual testing."
     ),
-    version="0.1.0",
+    version="0.2.0",
     openapi_tags=[
-        {"name": "traverse", "description": "Graph traversal endpoints"},
+        {"name": "traverse", "description": "Grammar graph traversal endpoints"},
         {"name": "status", "description": "Service health and graph stats"},
     ],
     lifespan=lifespan,
@@ -50,3 +54,4 @@ app.add_middleware(MetricsMiddleware)
 app.add_route("/metrics", metrics_endpoint)
 
 app.include_router(traverse_router)
+app.include_router(admin_router)

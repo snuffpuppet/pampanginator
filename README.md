@@ -1,8 +1,8 @@
 # Pampanginator
 
-A Kapampangan language tutor with a pluggable LLM backend. The assistant, named **Ading** (younger sibling), teaches vocabulary, verb aspect morphology, grammar, and pronunciation through conversation. It grounds every answer in authoritative reference data rather than relying on the model's training knowledge alone.
+A Kapampangan language tutor with a pluggable LLM backend. The assistant, named **Ading** (younger sibling), teaches vocabulary, verb aspect morphology, grammar, and pronunciation through conversation. It grounds every answer in authoritative reference data stored in a PostgreSQL/pgvector database rather than relying on the model's training knowledge alone.
 
-The LLM backend is configurable — it runs against Anthropic's API (Claude) or a local model via Ollama. Both can be compared side by side in the Compare view.
+The LLM backend is configurable — it runs against Anthropic's API (Claude) or any OpenAI-compatible model via Ollama. Both can be compared side by side in the Compare view.
 
 ---
 
@@ -11,20 +11,25 @@ The LLM backend is configurable — it runs against Anthropic's API (Claude) or 
 ```
 User browser
     ↓
-app (port 8000)               Serves built React frontend + tool-use API
-    ├── mcp-vocabulary (port 8001)   Vocabulary index server
-    └── mcp-grammar    (port 8002)   Grammar knowledge graph server
+app (port 8000)               Orchestration API + built React frontend
+    ├── mcp-vocabulary (port 8001)   Vocabulary MCP server (pgvector semantic search)
+    └── mcp-grammar    (port 8002)   Grammar graph MCP server (pgvector + graph traversal)
+    └── postgres       (port 5432)   PostgreSQL 16 + pgvector (shared by all three)
+
+Observability stack
+    ├── grafana        (port 3000)   Dashboards (Prometheus + Tempo + Loki)
+    ├── prometheus     (port 9090)   Metrics scraper
+    ├── tempo          (port 3200)   Distributed trace storage
+    ├── loki           (port 3100)   Log aggregation
+    ├── promtail                     Log shipper (reads Docker container logs)
+    └── otel-collector (port 4318)   OTLP HTTP receiver → Tempo
 ```
 
-**app** — FastAPI service that owns the agentic tool-use loop. It maintains per-session conversation history, dispatches tool calls to the MCP servers, and serves the built React frontend as static files. The frontend is built before the Docker image is assembled (`npm run build` outputs to `app/frontend/`).
+**app** — FastAPI service that owns the agentic tool-use loop. Maintains per-session conversation history, logs every interaction to PostgreSQL, dispatches tool calls to the MCP servers, and serves the built React frontend as static files.
 
-**mcp-vocabulary** — FastAPI service that loads `vocabulary.json` at startup and exposes a search endpoint. The LLM calls this whenever it needs to look up a Kapampangan word or English concept.
+**mcp-vocabulary** — FastAPI service backed by pgvector. Generates sentence-transformer embeddings (all-MiniLM-L6-v2, 384 dims) at startup for semantic search. Seeds from `data/vocabulary.json` on first boot (or when `RESEED_ON_STARTUP=true`). Exposes vocabulary search and contribution endpoints.
 
-**mcp-grammar** — FastAPI service that loads `grammar_graph.json` at startup and exposes a graph traversal endpoint. The LLM calls this for any grammar question: verb aspects, focus types, pronouns, case markers, particles, and more.
-
-### LLM backend (dev server)
-
-The LLM communication layer lives in `frontend/vite.config.ts` as Vite dev server middleware. It handles `/api/chat`, `/api/chat/anthropic`, and `/api/chat/ollama`, and is where the Anthropic/Ollama backend selection happens. This middleware only runs during `npm run dev` — it is not included in the production build. The Compare view, which runs both backends side by side, also runs through this layer.
+**mcp-grammar** — FastAPI service backed by pgvector. Same embedding model. Seeds from `data/grammar_nodes.json` and `data/grammar_edges.json`. Exposes graph traversal using two-stage retrieval: semantic similarity to find anchor nodes, graph edges for relationship expansion.
 
 ---
 
@@ -37,12 +42,18 @@ The LLM communication layer lives in `frontend/vite.config.ts` as Vite dev serve
 
 No Node.js installation is required on the host machine.
 
-### Configure the backend
+### Configure
 
-Create a `.env` file in the project root:
+Copy `.env.example` to `.env` and fill in the values:
 
 ```bash
-# Use Anthropic (Claude)
+cp .env.example .env
+```
+
+Key variables:
+
+```bash
+# LLM backend
 BACKEND=anthropic
 ANTHROPIC_API_KEY=your-key-here
 
@@ -50,7 +61,12 @@ ANTHROPIC_API_KEY=your-key-here
 # BACKEND=ollama
 # OLLAMA_MODEL=llama3.2
 # OLLAMA_URL=http://host.docker.internal:11434
+
+# Admin interface password (optional — if unset, admin is open)
+VITE_ADMIN_PASSWORD=your-admin-password
 ```
+
+The LLM backend can also be configured per-service in `config/llm.yaml` (model, temperature, max tokens, whether the agentic tool-use loop is enabled).
 
 ### Dev mode (live reload)
 
@@ -58,12 +74,11 @@ ANTHROPIC_API_KEY=your-key-here
 docker compose up
 ```
 
-Docker Compose automatically merges `docker-compose.yml` with
-`docker-compose.override.yml`. The override adds a `frontend` container running the
-Vite dev server with HMR, and mounts all service source directories so Python
-changes reload without a restart.
+Docker Compose automatically merges `docker-compose.yml` with `docker-compose.override.yml`. The override adds a `frontend` container running the Vite dev server with HMR, and mounts all service source directories so Python changes reload without a rebuild.
 
 Open `http://localhost:5173`.
+
+> **Note:** After adding new Python dependencies to `requirements.txt`, run `docker compose build <service>` to reinstall them — the dev server hot-reload picks up code changes but not new packages.
 
 ### Prod mode (container rebuild)
 
@@ -71,38 +86,150 @@ Open `http://localhost:5173`.
 docker compose -f docker-compose.yml up
 ```
 
-Passing `-f` explicitly skips the override file. The app image is built using a
-multi-stage Dockerfile: a Node.js stage compiles the frontend, the output is copied
-into the Python runtime stage. No local Node.js required.
+Passing `-f` explicitly skips the override file. The app image is built using a multi-stage Dockerfile: a Node.js stage compiles the React frontend, the output is copied into the Python runtime stage. No local Node.js required.
 
 Open `http://localhost:8000`.
 
-### API endpoints
+---
 
-| Service | Port | Key endpoints |
+## API Endpoints
+
+### Orchestration app (port 8000)
+
+| Method | Path | Description |
 |---|---|---|
-| app | 8000 | `POST /chat`, `DELETE /chat/{session_id}` |
-| mcp-vocabulary | 8001 | `POST /lookup`, `GET /lookup/{term}`, `GET /status` |
-| mcp-grammar | 8002 | `POST /traverse`, `GET /traverse/{root}`, `GET /status` |
+| `POST` | `/api/chat` | Stream a chat response (SSE) |
+| `GET` | `/api/vocabulary/search` | Semantic vocabulary search |
+| `POST` | `/api/vocabulary` | Add a vocabulary entry |
+| `POST` | `/api/feedback` | Submit thumbs-up or thumbs-down feedback |
+| `GET` | `/api/feedback/pending` | List unreviewed thumbs-down corrections |
+| `GET` | `/api/feedback` | List all feedback (filterable) |
+| `POST` | `/api/feedback/{id}/approve` | Approve a correction, write it to vocabulary |
+| `POST` | `/api/feedback/{id}/reject` | Mark a correction rejected |
+| `POST` | `/api/export/training-data` | Download SFT or DPO JSONL for fine-tuning |
+| `GET` | `/api/admin/sync/status` | Knowledge sharing sync status |
+| `POST` | `/api/admin/sync/export` | Download local contributions as a zip archive |
+| `GET` | `/api/admin/contributions/pending` | List pending contributions (Mode 3) |
+| `POST` | `/api/admin/contributions/upload` | Upload a contribution zip for review (Mode 2) |
+| `POST` | `/api/admin/contributions/{id}/approve` | Approve an uploaded contribution |
+| `POST` | `/api/admin/contributions/{id}/reject` | Reject an uploaded contribution |
+| `GET` | `/health` | Liveness probe |
+| `GET` | `/metrics` | Prometheus metrics (OpenMetrics format) |
+| `GET` | `/docs` | Swagger UI |
 
-### LLM endpoints (dev mode, via Vite dev server)
+### MCP Vocabulary server (port 8001)
 
-| Endpoint | Behaviour |
-|---|---|
-| `POST /api/chat` | Uses the backend configured in `.env` |
-| `POST /api/chat/anthropic` | Always Anthropic (Compare page) |
-| `POST /api/chat/ollama` | Always Ollama (Compare page) |
-| `GET /api/status` | Returns active backend, model name, and key presence |
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/lookup` | Semantic search for vocabulary entries |
+| `POST` | `/vocabulary` | Add a vocabulary entry |
+| `GET` | `/status` | Service health and entry count |
+| `GET` | `/docs` | Swagger UI |
+
+### MCP Grammar server (port 8002)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/traverse` | Two-stage semantic + graph traversal |
+| `GET` | `/status` | Service health and node/edge count |
+| `GET` | `/docs` | Swagger UI |
 
 ---
 
-## Compare Page
+## Frontend Views
 
-The Compare view (`/compare`) sends the same question to both backends simultaneously and streams the responses side by side. This is useful for evaluating how a local Ollama model performs relative to Claude on Kapampangan-specific questions.
+| Path | Description |
+|---|---|
+| `/` | Home — quick-action tiles and scenario launcher |
+| `/chat` | Conversation with Ading |
+| `/translate` | Dedicated translation mode (EN↔KP) |
+| `/grammar` | Grammar explorer |
+| `/vocabulary` | Vocabulary search (semantic), flashcard drill, and add-entry form |
+| `/compare` | Side-by-side Anthropic vs Ollama comparison |
+| `/admin` | Admin interface (password-gated) |
 
-Both panels display elapsed response time. The status bar at the top shows which backends are available based on the current `.env` configuration — if the Anthropic key is absent the Claude panel will show an error; if Ollama is not running, its panel will prompt you to start it with `ollama serve`.
+### Admin interface (`/admin`)
 
-Neither panel uses tool calls — the comparison is a direct prompt-to-response measurement of the model's own Kapampangan knowledge.
+Four tabs:
+
+- **Review** — pending thumbs-down corrections from users, with approve/reject controls and authority level override
+- **History** — full feedback log with filters (rating, authority level, date range, applied status)
+- **Export** — download training data as SFT or DPO JSONL for fine-tuning, with date range and authority level filters
+- **Contributions** — knowledge sharing: export local vocabulary additions as a zip, upload and review incoming contribution zips (Mode 2), review pending shared-DB contributions (Mode 3)
+
+---
+
+## How Vocabulary Search Works
+
+Vocabulary entries are stored in PostgreSQL with a 384-dimensional pgvector embedding per entry. At query time:
+
+1. The query text is embedded with the same sentence-transformer model
+2. A cosine similarity search finds the nearest neighbours in the vector index
+3. Results include `similarity_score` — the frontend shows a "near miss" notice when the best match is below 0.72
+
+The MCP server also exposes the data to the agentic loop: when Claude needs to ground a translation or correction in authoritative data, it calls `vocabulary_lookup` which hits the same semantic search.
+
+### Vocabulary data lifecycle
+
+Canonical data lives in `data/vocabulary.json` (plus `grammar_nodes.json` and `grammar_edges.json`). On first boot, each MCP server checks whether its table is empty and seeds from these files. Set `RESEED_ON_STARTUP=true` to force a full re-seed.
+
+To add vocabulary outside the UI, use the CLI scripts:
+
+```bash
+# Export local (non-seeded) additions as a contribution zip
+python scripts/export_contributions.py
+
+# Import a vocabulary JSON file into the running database
+python scripts/import_knowledge.py --file data/vocabulary.json --mode incremental
+
+# Merge a contributor's additions into the canonical data files
+python scripts/merge_contributions.py --contrib-dir /path/to/contrib/
+
+# Package a contribution for sharing (Mode 2)
+python scripts/package_contribution.py --contributor "Name"
+```
+
+---
+
+## How the Grammar Server Works
+
+Grammar knowledge is stored as a typed directed graph in PostgreSQL. Each node is a grammar concept (verb root, focus type, pronoun set, etc.) with an embedding; edges carry a relationship type (`aspect_of`, `focus_type`, `related_form`, `derived_noun`).
+
+When Claude calls `grammar_lookup`, the server runs two-stage retrieval:
+
+1. **Semantic anchor** — embed the query, find the most similar node(s) in the vector index
+2. **Graph expansion** — walk edges from the anchor nodes, optionally filtered by relationship type, returning connected nodes and their labels
+
+This means grammar questions are answered even when the exact node id is not known.
+
+---
+
+## Knowledge Sharing
+
+Contributors working on separate databases can share vocabulary and grammar additions through three modes, configured in `config/knowledge_sharing.yaml`:
+
+| Mode | How |
+|---|---|
+| `git` (default) | Export a zip, commit to a shared repo, teammates import from repo |
+| `sync` | Automatic push/pull against a hosted canonical URL |
+| `shared_db` | All contributors write to a common cloud PostgreSQL instance |
+
+The **Contributions tab** in the admin interface handles the Mode 2 zip workflow end-to-end: export your local additions, share the zip, and the recipient uploads it for review before applying.
+
+---
+
+## Feedback and Training Data
+
+Every chat interaction is logged to the `interactions` table. Users can rate any Ading response with 👍 or 👎. Thumbs-down opens an inline correction form (Kapampangan fix, English gloss, corrector identity, authority level 1–4).
+
+Approved corrections are written back to the vocabulary database, closing the loop between user feedback and the knowledge base.
+
+The **Export tab** in the admin interface downloads approved interactions as:
+
+- **SFT** — supervised fine-tuning pairs (prompt + response) in JSONL
+- **DPO** — direct preference optimisation triples (prompt + chosen + rejected) in JSONL
+
+Both formats are filtered by minimum authority level and optional date range.
 
 ---
 
@@ -117,76 +244,13 @@ The **Kapampangan Tutor** dashboard provides:
 - **LLM call duration** — time waiting for the LLM backend, broken down by model
 - **Token consumption** — input and output tokens per minute
 - **Tool call rate** — how often vocabulary vs grammar lookups are triggered
-- **Vocabulary hit/miss rate** — found vs not\_found, useful for identifying vocabulary gaps
-- **Grammar traversal breakdown** — which relationship types are queried most
 - **Live trace list** — recent traces from Tempo, click any to inspect the full span tree
 
-Every histogram panel supports **exemplar click-through**: click a dot on a latency chart to open the exact trace for that request in Tempo.
+Every histogram panel supports **exemplar click-through**: click a dot on a latency chart to open the exact trace in Tempo.
 
-### Tracing
+Traces are accessible directly via **Explore → Tempo** → service: `kapampangan-app`.
 
-Traces are stored in Tempo and accessible via the Grafana Explore view:
-
-1. Open `http://localhost:3000`
-2. Go to **Explore** → select the **Tempo** datasource
-3. Search by service: `kapampangan-app`
-4. Click any trace to see the full span tree: `app → mcp-vocabulary → mcp-grammar → LLM backend`
-
-### Prometheus
-
-Raw metrics are available at `http://localhost:9090`. All three services expose a `/metrics` endpoint in OpenMetrics format.
-
----
-
-## How the Vocabulary Server Works
-
-At startup, `mcp-vocabulary` reads `mcp-vocabulary/data/vocabulary.json` and builds three in-memory indexes:
-
-- **exact index** — Kapampangan word (lowercase) → entry
-- **form index** — any inflected form → entry (covers all aspect forms, derived forms)
-- **gloss index** — each significant English word in a definition → list of entries
-
-When Claude calls `vocabulary_lookup`, the server searches these indexes in order: exact match first, then inflected form, then prefix, then English gloss. It returns up to six entries by default, including definition, part of speech, IPA pronunciation, aspect forms, example sentences, and etymology where available.
-
-### Vocabulary data lifecycle
-
-The vocabulary data originates from [kaikki.org](https://kaikki.org), which extracts structured JSON from Wiktionary. The fetch script at `frontend/src/` (or a separate scripts directory) downloads the Kapampangan subset and writes it to `mcp-vocabulary/data/vocabulary.json`.
-
-Because the data directory is Docker-mounted (`./mcp-vocabulary/data:/app/data`), you can update `vocabulary.json` and restart just the vocabulary service without rebuilding the image:
-
-```bash
-# Update vocabulary data, then:
-docker compose restart mcp-vocabulary
-```
-
-The server re-reads the file and rebuilds all three indexes on startup. No migration or schema change is required — the JSON structure is fixed by the kaikki.org extraction format.
-
----
-
-## How the Grammar Server Works
-
-At startup, `mcp-grammar` reads `mcp-grammar/data/grammar_graph.json` and builds an in-memory directed graph:
-
-- **nodes** — grammar concepts and verb forms, each with an `id`, `word`, and metadata
-- **out-edges** — indexed by `from` node id
-- **in-edges** — indexed by `to` node id
-
-When Claude calls `grammar_lookup`, it passes a root (a verb root like `mangan`, or a concept id like `actor_focus`, `demonstratives`, `absolutive_pronouns`) and an optional relationship filter. The server finds the node, collects all edges in both directions, optionally filters by relationship type, and returns the connected nodes with their relationship labels.
-
-Supported relationship types: `aspect_of`, `focus_type`, `related_form`, `derived_noun`, `all`.
-
-### Grammar data lifecycle
-
-The grammar graph is handcrafted: it encodes Kapampangan verb morphology, the focus system (actor / object / goal / locative / circumstantial), pronoun sets, case markers, particles, demonstratives, and other grammatical structures as a network of typed relationships.
-
-The data file lives at `mcp-grammar/data/grammar_graph.json` and is also Docker-mounted, so updates take effect on restart without a rebuild:
-
-```bash
-# Edit grammar_graph.json, then:
-docker compose restart mcp-grammar
-```
-
-The graph has no external dependencies — it is a self-contained JSON file maintained alongside the codebase. Adding a new verb or grammar concept means adding nodes and edges to this file; no code changes are needed.
+Raw metrics are available at `http://localhost:9090`.
 
 ---
 
@@ -196,51 +260,92 @@ The graph has no external dependencies — it is a self-contained JSON file main
 |---|---|
 | `config/system_prompt.md` | Ading's persona, language profile, and interaction rules |
 | `config/tools.yaml` | Tool definitions passed to every LLM API call |
-| `config/otel-collector.yaml` | OTel collector pipeline (OTLP HTTP in → Tempo gRPC out) |
+| `config/llm.yaml` | LLM backend selection, model, temperature, tool-use toggle |
+| `config/knowledge_sharing.yaml` | Contributor name and knowledge sharing mode |
+| `config/ui.yaml` | Navigation labels, quick-action tiles, scenario definitions |
+| `config/otel-collector.yaml` | OTel collector pipeline |
 | `config/tempo.yaml` | Tempo trace storage config |
 | `config/prometheus.yaml` | Prometheus scrape targets |
-| `config/dashboard/datasources.yaml` | Grafana datasource provisioning (Tempo + Prometheus) |
-| `config/dashboard/dashboards.yaml` | Grafana dashboard provisioning config |
-| `config/dashboard/pampanginator-dashboard.json` | The Grafana dashboard definition |
+| `config/dashboard/` | Grafana datasource and dashboard provisioning |
 
-The `config/` directory is mounted into the `app` container so changes to the system prompt and tool definitions take effect on a service restart — no image rebuild required.
+The `config/` directory is mounted into the `app` container — changes to the system prompt, tool definitions, and LLM settings take effect on a service restart with no image rebuild.
 
 ---
 
 ## Project Layout
 
 ```
-frontend/                React chat UI
-  vite.config.ts         Dev server + LLM API middleware
+data/                    Canonical knowledge base (seeded into PostgreSQL on first boot)
+  vocabulary.json        Vocabulary entries
+  grammar_nodes.json     Grammar concept nodes
+  grammar_edges.json     Grammar relationship edges
+  PROVENANCE.md          Contributor and source metadata
+
+db/
+  init.sql               PostgreSQL schema (vocabulary, grammar, interactions, feedback,
+                         pending_contributions tables + pgvector extension)
+
+scripts/                 CLI tools for data management
+  export_contributions.py    Export local additions as a contribution zip
+  import_knowledge.py        Import vocabulary/grammar from JSON into the database
+  merge_contributions.py     Merge incoming contributions into canonical data files
+  package_contribution.py    Package a contribution zip for sharing
+
+frontend/                React SPA
+  vite.config.ts         Dev server + fallback LLM middleware (Anthropic/Ollama)
   src/
     components/
-      Chat.tsx           Main conversation interface
-      Compare.tsx        Side-by-side LLM comparison view
+      Home.tsx           Quick-action tiles and scenario launcher
+      Chat.tsx           Main conversation interface with feedback controls
+      Translate.tsx      Dedicated translation mode
       Grammar.tsx        Grammar explorer
-      Vocabulary.tsx     Vocabulary browser and drill
-    services/api.ts      All fetch() calls — one file per Decision 10
+      Vocabulary.tsx     Semantic search, flashcard drill, add-entry form
+      Compare.tsx        Side-by-side LLM comparison
+      Admin.tsx          Admin interface (review / history / export / contributions)
+      MessageBubble.tsx  Chat bubble with thumbs-up/down and inline correction form
+      BottomNav.tsx      Navigation bar
+    services/api.ts      All fetch() calls — one file (Decision 10)
+    store/               Zustand stores (conversation, vocabulary)
     config/ui.ts         Navigation, scenarios, sample prompts
 
-app/                     Orchestration service (tool use + history)
-  main.py                FastAPI app setup
-  telemetry.py           OTel tracing init
+app/                     Orchestration service
+  main.py                FastAPI app setup and router registration
+  telemetry.py           OTel tracing initialisation
   metrics.py             Prometheus metric definitions
-  middleware.py          Request duration/count middleware
+  middleware.py          Request duration and count middleware
+  logging_setup.py       Structured JSON logging
   services/
-    llm.py               Agentic loop (tool use, multi-turn)
+    llm.py               Agentic loop (tool use, multi-turn, streaming)
     tool_router.py       Dispatches tool calls to MCP servers
-    history.py           Per-session conversation history (in-memory)
+    db.py                asyncpg connection pool
+    interactions.py      Interaction logging
+    knowledge.py         Knowledge sharing service (sync status, export, approve/reject)
   routes/
-    chat.py              POST /chat
+    chat.py              POST /api/chat
+    feedback.py          Feedback CRUD and review endpoints
+    vocab.py             Vocabulary search and add proxy
+    export.py            Training data export (SFT/DPO JSONL)
+    admin_knowledge.py   Knowledge sharing admin endpoints
     health.py            GET /health
 
-mcp-vocabulary/          Vocabulary index server
-  services/index.py      Three-index search implementation
-  routes/lookup.py       GET /lookup/{term}, POST /lookup
+mcp-vocabulary/          Vocabulary MCP server
+  main.py                FastAPI app + seeding on startup
+  services/
+    embed.py             Sentence-transformer embedding (all-MiniLM-L6-v2)
+    seed.py              Seeds from data/vocabulary.json if table is empty
+    db.py                asyncpg pool
+  routes/
+    lookup.py            POST /lookup (semantic search)
+    vocab.py             POST /vocabulary (add entry)
 
-mcp-grammar/             Grammar graph server
-  services/graph.py      In-memory graph traversal
-  routes/traverse.py     POST /traverse, GET /traverse/{root}
+mcp-grammar/             Grammar graph MCP server
+  main.py                FastAPI app + seeding on startup
+  services/
+    embed.py             Sentence-transformer embedding
+    seed.py              Seeds from data/grammar_nodes.json + grammar_edges.json
+    db.py                asyncpg pool
+  routes/
+    traverse.py          POST /traverse (two-stage semantic + graph retrieval)
 
 config/                  Runtime configuration (mounted, not baked in)
 ```

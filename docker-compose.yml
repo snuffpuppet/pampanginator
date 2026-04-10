@@ -15,6 +15,7 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001
       - GRAMMAR_SERVICE_URL=http://mcp-grammar:8002
+      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@postgres:5432/kapampangan
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=kapampangan-app
       - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
@@ -25,6 +26,7 @@ services:
     depends_on:
       - mcp-vocabulary
       - mcp-grammar
+      - postgres
       - otel-collector
 
   mcp-vocabulary:
@@ -32,15 +34,17 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@postgres:5432/kapampangan
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=kapampangan-mcp-vocabulary
       - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
+      - RESEED_ON_STARTUP=${RESEED_ON_STARTUP:-false}
     volumes:
-      - ./mcp-vocabulary/data:/app/data   # Mount so vocabulary.json can be updated without rebuild
-      - ./frontend/src/data/kaikki.json:/app/data/vocabulary.json:ro  # resolve symlink inside container
+      - ./data:/app/data:ro        # canonical knowledge base — read-only for MCP servers
     depends_on:
+      - postgres
       - otel-collector
 
   mcp-grammar:
@@ -48,14 +52,17 @@ services:
     ports:
       - "8002:8002"
     environment:
+      - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD}@postgres:5432/kapampangan
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=kapampangan-mcp-grammar
       - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
       - SERVICE_VERSION=0.1.0
+      - RESEED_ON_STARTUP=${RESEED_ON_STARTUP:-false}
     volumes:
-      - ./mcp-grammar/data:/app/data      # Mount so grammar_graph.json can be updated without rebuild
+      - ./data:/app/data:ro        # canonical knowledge base — read-only for MCP servers
     depends_on:
+      - postgres
       - otel-collector
 
   otel-collector:
@@ -143,7 +150,25 @@ services:
       - ./config/grafana-init.sh:/grafana-init.sh
     entrypoint: ["/bin/sh", "/grafana-init.sh"]
 
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=kapampangan
+      - POSTGRES_USER=kapampangan
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kapampangan -d kapampangan"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   tempo-data:
   loki-data:
   grafana-data:
+  postgres-data:

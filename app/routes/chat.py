@@ -7,7 +7,7 @@ from opentelemetry import trace
 from opentelemetry import context as otel_context
 
 from models.schemas import ChatRequest
-from services import llm
+from services import llm, interactions as interaction_svc
 from metrics import LLM_ERRORS_TOTAL
 
 router = APIRouter(tags=["chat"])
@@ -20,6 +20,7 @@ tracer = trace.get_tracer(__name__)
     summary="Send a conversation turn",
     response_description=(
         "Server-sent events stream. Each event is `data: {\"text\": \"...\"}`. "
+        "The final event before [DONE] is `data: {\"interaction_id\": \"uuid\"}`. "
         "The stream ends with `data: [DONE]`."
     ),
 )
@@ -28,20 +29,21 @@ async def chat(request: ChatRequest):
     Accepts the full conversation history and streams the assistant response
     as Server-Sent Events (SSE).
 
-    Each SSE frame carries `{"text": "..."}`. The final frame is `[DONE]`.
+    Each SSE frame carries `{"text": "..."}`. After the final text frame,
+    one metadata frame carries `{"interaction_id": "uuid"}` so the frontend
+    can attach feedback to the correct interaction record.
+    The stream closes with `[DONE]`.
 
-    The agentic loop runs inside this call: the LLM may invoke `vocabulary_lookup`
-    or `grammar_lookup` tool calls before producing the final response. Tool
-    results are not streamed; only the final assistant text is sent.
-
-    If the response was produced without verified tool data, it is prefixed with
-    an uncertainty caveat.
+    The agentic loop runs inside: the LLM may invoke `vocabulary_lookup` or
+    `grammar_lookup` before producing the final response. Only the final
+    assistant text is streamed.
     """
     session_id = request.session_id or str(uuid.uuid4())
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    user_message = next(
+        (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
+    )
 
-    # Capture context now — the HTTP request span closes when we return
-    # StreamingResponse, before the generator runs.
     ctx = otel_context.get_current()
 
     _UNVERIFIED_CAVEAT = (
@@ -51,13 +53,34 @@ async def chat(request: ChatRequest):
 
     async def stream():
         with tracer.start_as_current_span("chat.stream", context=ctx):
+            interaction_id = None
             try:
                 response_text, tools_used = await llm.complete(messages, session_id=session_id)
-                # If the model answered without any tool calls, prepend the caveat
-                # unless it already included one (model followed the instruction itself).
+
                 if not tools_used and "training knowledge" not in response_text.lower():
                     response_text = _UNVERIFIED_CAVEAT + response_text
+
                 yield f"data: {json.dumps({'text': response_text})}\n\n"
+
+                # Log the interaction and emit the interaction_id so the
+                # frontend can attach feedback to this specific turn.
+                try:
+                    interaction_id = await interaction_svc.log_interaction(
+                        session_id=session_id,
+                        user_message=user_message,
+                        llm_response=response_text,
+                        model=llm.ACTIVE_MODEL,
+                        system_prompt_version=llm.SYSTEM_PROMPT_VERSION,
+                        tools_used=tools_used,
+                    )
+                    yield f"data: {json.dumps({'interaction_id': interaction_id})}\n\n"
+                except Exception as log_err:
+                    # Logging failure must never break the user-facing response
+                    import logging
+                    logging.getLogger(__name__).error(
+                        "interaction logging failed", extra={"error": str(log_err)}
+                    )
+
             except Exception as e:
                 LLM_ERRORS_TOTAL.labels(
                     backend=llm.ACTIVE_BACKEND,

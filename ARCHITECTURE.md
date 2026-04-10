@@ -482,10 +482,20 @@ kapampangan-tutor/
 │
 ├── docker-compose.yml              # Service definitions
 │
+├── data/                           # Canonical knowledge base (source of truth)
+│   ├── vocabulary.json             # All approved vocabulary entries
+│   ├── grammar_nodes.json          # All approved grammar graph nodes
+│   ├── grammar_edges.json          # All approved grammar graph edges
+│   └── PROVENANCE.md               # Data sources and contributor record
+│
 ├── db/
 │   └── init.sql                    # PostgreSQL schema — run on first startup
 │
 ├── scripts/
+│   ├── export_contributions.py     # Export local approved additions
+│   ├── merge_contributions.py      # Merge contributions into canonical files
+│   ├── import_knowledge.py         # Import canonical files into database
+│   ├── package_contribution.py     # Package contributions for sending (Mode 2)
 │   └── export_training_data.py     # Training data export script
 │
 ├── config/
@@ -497,6 +507,7 @@ kapampangan-tutor/
 │   ├── prometheus.yaml             # Prometheus scrape targets
 │   ├── loki.yaml                   # Loki log aggregation config
 │   ├── promtail.yaml               # Promtail log shipping config
+│   ├── knowledge_sharing.yaml      # Knowledge sharing mode and settings
 │   └── dashboard/                  # Grafana provisioning and dashboard JSON
 │
 ├── app/                            # Container 1 — Orchestration + Frontend
@@ -507,53 +518,71 @@ kapampangan-tutor/
 │   ├── middleware.py               # Request duration/count middleware
 │   ├── routes/
 │   │   ├── chat.py                 # /chat endpoint — handles conversation turns
-│   │   ├── feedback.py             # /feedback endpoint
-│   │   ├── vocab.py                # /vocabulary endpoints
+│   │   ├── feedback.py             # /feedback endpoints (CRUD + approve/reject)
+│   │   ├── vocab.py                # /vocabulary endpoints (proxy to mcp-vocabulary)
+│   │   ├── export.py               # /export/training-data endpoint
+│   │   ├── admin_knowledge.py      # /admin/sync/* and /admin/contributions/* endpoints
 │   │   └── health.py               # /health endpoint
 │   ├── services/
 │   │   ├── llm.py                  # Agentic loop — reads llm.yaml, dispatches to configured backend
 │   │   ├── tool_router.py          # Reads tools.yaml, routes tool calls to MCP servers
 │   │   ├── interactions.py         # Interaction logging service
 │   │   ├── feedback.py             # Feedback capture and review service
+│   │   ├── knowledge.py            # Knowledge sharing: sync status, contribution export/import
+│   │   ├── db.py                   # asyncpg connection pool
 │   │   └── history.py              # Conversation history management
 │   ├── models/
 │   │   └── schemas.py              # Pydantic data models
 │   ├── frontend/                   # React build output (served as static files)
 │   └── requirements.txt
 │
-├── mcp-vocabulary/                 # Container 2 — RAG Vocabulary Server
-│   ├── Dockerfile
-│   ├── main.py                     # FastAPI app entry point
+├── mcp-vocabulary/                 # Container 2 — Vocabulary MCP Server
+│   ├── Dockerfile                  # Pre-downloads sentence-transformer at build time
+│   ├── main.py                     # FastAPI app entry point; seeds DB on startup
 │   ├── routes/
-│   │   └── lookup.py               # /lookup/{term} endpoint
+│   │   └── lookup.py               # GET /lookup, POST /lookup, POST /vocabulary
 │   ├── services/
-│   │   ├── embeddings.py           # sentence-transformer embedding service
-│   │   └── index.py                # Loads and searches the vocabulary JSON
-│   ├── data/
-│   │   └── vocabulary.json         # Kapampangan vocabulary store
+│   │   ├── embeddings.py           # sentence-transformers/all-MiniLM-L6-v2 (384-dim)
+│   │   ├── index.py                # pgvector cosine similarity search + add_entry
+│   │   ├── seed.py                 # Startup seeding from data/vocabulary.json
+│   │   └── db.py                   # asyncpg connection pool
+│   ├── models/
+│   │   └── schemas.py              # VocabularyEntry, VocabularySearchResult, etc.
 │   └── requirements.txt
 │
-├── mcp-grammar/                    # Container 3 — Knowledge Graph Server
-│   ├── Dockerfile
-│   ├── main.py                     # FastAPI app entry point
+├── mcp-grammar/                    # Container 3 — Grammar Graph MCP Server
+│   ├── Dockerfile                  # Pre-downloads sentence-transformer at build time
+│   ├── main.py                     # FastAPI app entry point; seeds DB on startup
 │   ├── routes/
-│   │   └── traverse.py             # /traverse endpoint
+│   │   └── traverse.py             # POST /traverse, GET /traverse/{root}
 │   ├── services/
-│   │   ├── embeddings.py           # sentence-transformer embedding service
-│   │   └── graph.py                # Loads graph, executes traversal queries
-│   ├── data/
-│   │   └── grammar_graph.json      # Kapampangan grammar knowledge graph
+│   │   ├── embeddings.py           # sentence-transformers/all-MiniLM-L6-v2 (384-dim)
+│   │   ├── graph.py                # Two-stage retrieval: pgvector → edge traversal
+│   │   ├── seed.py                 # Startup seeding from data/grammar_nodes/edges.json
+│   │   └── db.py                   # asyncpg connection pool
+│   ├── models/
+│   │   └── schemas.py              # GrammarNode, GrammarEdge, GraphFragment, etc.
 │   └── requirements.txt
 │
 └── frontend/                       # React source (built into app/frontend/)
     ├── src/
-    │   ├── App.jsx
+    │   ├── App.tsx                  # Router — /chat, /vocabulary, /admin, etc.
     │   ├── components/
-    │   │   ├── ChatWindow.jsx
-    │   │   ├── MessageBubble.jsx
-    │   │   └── InputBar.jsx
+    │   │   ├── Chat.tsx             # Chat page
+    │   │   ├── ChatWindow.tsx       # Message list renderer
+    │   │   ├── MessageBubble.tsx    # Message bubble + thumbs up/down feedback controls
+    │   │   ├── InputBar.tsx         # Captures user input, calls store action
+    │   │   ├── Vocabulary.tsx       # Vocab search + add entry + flashcard drill
+    │   │   ├── Admin.tsx            # Admin interface (Review / History / Export / Contributions)
+    │   │   ├── Grammar.tsx
+    │   │   ├── Home.tsx
+    │   │   ├── Compare.tsx
+    │   │   └── ScenarioSelector.tsx
+    │   ├── store/
+    │   │   ├── conversation.ts      # Zustand — messages, streaming, sendMessage action
+    │   │   └── vocabulary.ts        # Zustand — search results, add entry actions
     │   └── services/
-    │       └── api.js              # Calls the FastAPI /chat endpoint
+    │       └── api.ts               # All HTTP calls (chat, vocab, feedback, admin)
     └── package.json
 ```
 
@@ -957,6 +986,10 @@ All three application services connect to this instance. The MCP servers
 access their respective tables. The orchestration layer accesses the
 interaction and feedback tables.
 
+`db/init.sql` must also include the `pending_contributions` table as defined
+in Decision 22, which supports all three knowledge sharing operating modes
+(git-backed, maintainer-mediated sync, and shared database).
+
 ---
 
 ### Decision 12 — Semantic vector search for vocabulary and grammar
@@ -1266,22 +1299,378 @@ Related entries:
 ### Decision 18 — Admin interface
 
 A protected section of the React application for data quality management.
-Access restricted — not part of the main user flow.
+Access restricted via `VITE_ADMIN_PASSWORD` environment variable — not
+production security, prevents casual access only.
 
-**Three views:**
+Route: `/admin`
 
-**Correction review queue** — lists all feedback records where
-`reviewed = false`. For each: the original user message, the LLM response,
-the proposed correction, the correction note, and the proposed authority
-level. Actions: approve (writes to vocabulary/grammar, sets `applied = true`),
-reject (sets `reviewed = true`, `applied = false`), edit before approving.
+**Four tabs:**
+
+**Review queue** — lists all feedback records where `reviewed = false`. For
+each: the original user message, the LLM response, the proposed correction,
+the correction note, and the proposed authority level. Authority level can be
+overridden (1–4 buttons) before approving. Actions: approve (writes to
+vocabulary via mcp-vocabulary `POST /vocabulary`, sets `applied = true`),
+reject (sets `reviewed = true`, `applied = false`).
 
 **Feedback history** — searchable log of all feedback with filters for
-rating, authority level, date range, and applied status.
+rating, authority level, date range, and applied status. Expandable rows
+show the full LLM response and correction note in context.
 
-**Training data export** — form interface for the export script with format
-selection (SFT / DPO), minimum authority level filter, date range, and
-download of the resulting JSONL file.
+**Export** — form interface for the training data export with format selection
+(SFT / DPO), minimum authority level filter, date range, and download of the
+resulting JSONL file (calls `POST /api/export/training-data`).
+
+**Contributions** — two sub-views for knowledge sharing management:
+- *Sync Status*: last seeded date, count of local additions not yet exported,
+  current mode from `config/knowledge_sharing.yaml`, "Export my contributions"
+  button (calls `POST /api/admin/sync/export` which returns a zip download)
+- *Incoming*: zip upload zone for Mode 2 contribution packages; pending
+  contributions table for Mode 3 (from `pending_contributions` table);
+  approve/reject per entry
+
+---
+
+### Decision 22 — Shared Knowledge Model
+
+The knowledge base — vocabulary entries, grammar graph nodes and edges,
+and verified corrections — is a shared community asset, not a single
+user's private data. The architecture must support multiple contributors
+feeding into a common canonical knowledge base while preserving the
+authority level hierarchy and human review requirements established in
+Decision 14.
+
+#### The core principle
+
+The canonical knowledge base lives in version-controlled flat files in
+the repository. The PostgreSQL database is a materialised, queryable view
+of those files — not the source of truth. This distinction is fundamental:
+
+- **Source of truth:** `data/vocabulary.json`, `data/grammar.json` in the repo
+- **Runtime store:** PostgreSQL, seeded from those files on startup
+- **Contribution path:** local database → export → review → merge into files → repo
+
+This mirrors the way source code is managed. Multiple contributors diverge
+locally, contributions are reviewed, approved changes are merged into the
+canonical main branch, and everyone pulls the updated state on next sync.
+
+#### Three-tier architecture for knowledge sharing
+
+The system supports three operational modes, selectable by configuration.
+The data model and file formats are identical across all three — moving
+between modes requires only configuration changes, not schema changes.
+
+**Mode 1 — Git-backed (default, recommended starting point)**
+
+Canonical knowledge lives in the repository as JSON files. Contributors
+export their approved local additions, commit them to a branch, and submit
+a pull request. The maintainer reviews and merges. All instances reseed
+from the files on restart.
+
+This mode requires no additional infrastructure. Git provides conflict
+detection, full history, and peer review for free. Appropriate for a small
+group of known contributors who are comfortable with git, or where a
+simple UI wrapping the export/commit/push steps is acceptable.
+
+```
+Contribution flow:
+User runs export → commits to branch → pull request → maintainer reviews
+→ merges to main → all instances pull and reseed on next restart
+```
+
+**Mode 2 — Maintainer-mediated sync (no git required for contributors)**
+
+A canonical knowledge file is hosted at a known URL (GitHub raw file,
+S3 bucket, or any static file host). All instances pull from this URL on
+startup and apply it as their seed. Local contributions are packaged by a
+script and sent to the maintainer by any channel (email, shared folder,
+messaging). The maintainer reviews, merges, and publishes an updated file.
+All instances receive it on next restart.
+
+This mode is appropriate when contributors should not need to use git. The
+maintainer remains the bottleneck for merging, which is appropriate given
+the authority level model — native speaker corrections should not reach the
+canonical base without review.
+
+```
+Contribution flow:
+User runs package script → sends file to maintainer → maintainer runs
+merge script → publishes updated canonical file → all instances pull on
+next restart
+```
+
+**Mode 3 — Shared database (real-time, requires hosted PostgreSQL)**
+
+All instances connect to a shared cloud-hosted PostgreSQL instance
+(Supabase, Railway, Render — all have free tiers suitable for this scale).
+Contributions land in a `pending_contributions` table. The maintainer
+reviews via the admin interface and promotes approved entries into the
+canonical tables. All instances see approved knowledge immediately with
+no sync step.
+
+This mode requires internet access for all instances and basic API key
+authentication per contributor. Appropriate if the contributor base grows
+beyond a handful of known users or if real-time shared knowledge is
+required.
+
+```
+Contribution flow:
+User submits entry → lands in pending_contributions → maintainer approves
+via admin interface → entry appears in canonical tables immediately for
+all instances
+```
+
+#### Data files as source of truth
+
+Regardless of operating mode, the following files exist in the repository
+and are the canonical state of the knowledge base:
+
+```
+data/
+├── vocabulary.json         # All approved vocabulary entries
+├── grammar_nodes.json      # All approved grammar graph nodes
+├── grammar_edges.json      # All approved grammar graph edges
+└── PROVENANCE.md           # Record of data sources and contributors
+```
+
+**File format — vocabulary.json:**
+
+```json
+[
+  {
+    "term": "mangan",
+    "meaning": "to eat",
+    "part_of_speech": "verb",
+    "aspect_forms": {
+      "progressive": "mangan",
+      "completed": "mengan",
+      "contemplated": "mamangan"
+    },
+    "examples": [
+      {
+        "kapampangan": "Mangan ta na!",
+        "english": "Let's eat!",
+        "context": "Common family mealtime expression"
+      }
+    ],
+    "authority_level": 1,
+    "source": "native_speaker",
+    "verified_by": "household",
+    "verified_date": "2024-03-15",
+    "notes": "Core vocabulary. Irregular completed aspect.",
+    "contributor": "adam",
+    "added_date": "2024-03-15"
+  }
+]
+```
+
+**File format — grammar_nodes.json:**
+
+```json
+[
+  {
+    "id": "mengan",
+    "type": "verb_form",
+    "label": "Completed aspect of mangan",
+    "meaning": "ate / has eaten",
+    "embedding_text": "mengan — completed aspect of mangan, to eat. Used when the eating action is finished or already done. Equivalent to ate, have eaten, already ate, finished eating. Actor focus voice.",
+    "authority_level": 1,
+    "source": "native_speaker",
+    "verified_by": "household",
+    "verified_date": "2024-03-15",
+    "notes": "Irregular form — does not follow standard -in- infix pattern",
+    "contributor": "adam",
+    "added_date": "2024-03-15"
+  }
+]
+```
+
+**File format — grammar_edges.json:**
+
+```json
+[
+  {
+    "from_node": "mengan",
+    "relationship": "COMPLETED_ASPECT_OF",
+    "to_node": "mangan",
+    "authority_level": 1,
+    "contributor": "adam",
+    "added_date": "2024-03-15"
+  }
+]
+```
+
+#### PostgreSQL schema additions
+
+Add the following table to support Mode 2 and Mode 3 contribution flows.
+The table exists in all modes — in Mode 1 it is populated by the import
+script after a git merge rather than by direct contribution:
+
+```sql
+CREATE TABLE pending_contributions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    submitted_at TIMESTAMPTZ DEFAULT NOW(),
+    contributor TEXT NOT NULL,
+    contribution_type TEXT NOT NULL
+        CHECK (contribution_type IN ('vocabulary', 'grammar_node', 'grammar_edge')),
+    payload JSONB NOT NULL,
+    source_mode TEXT NOT NULL
+        CHECK (source_mode IN ('git', 'sync', 'shared_db')),
+    authority_level INTEGER NOT NULL,
+    review_status TEXT DEFAULT 'pending'
+        CHECK (review_status IN ('pending', 'approved', 'rejected')),
+    reviewed_by TEXT,
+    reviewed_at TIMESTAMPTZ,
+    review_note TEXT
+);
+
+CREATE INDEX ON pending_contributions (review_status);
+CREATE INDEX ON pending_contributions (contributor);
+CREATE INDEX ON pending_contributions (submitted_at);
+```
+
+#### Startup seeding behaviour
+
+On application startup, the MCP vocabulary and grammar servers check
+whether their tables are empty. If empty, they seed from the data files.
+If populated, they skip seeding. A `--force-reseed` flag overrides this
+for when the canonical files have been updated and a full refresh is
+needed.
+
+```
+Startup logic:
+IF vocabulary table is empty OR --force-reseed flag is set:
+    TRUNCATE vocabulary, grammar_nodes, grammar_edges
+    Import from data/vocabulary.json, data/grammar_nodes.json, data/grammar_edges.json
+    Generate embeddings for all imported entries
+    Log: "Seeded N vocabulary entries, M grammar nodes from canonical files"
+ELSE:
+    Log: "Database populated, skipping seed"
+```
+
+Environment variable `RESEED_ON_STARTUP=true` enables automatic reseeding
+on every restart — appropriate for Mode 1 and Mode 2 where the canonical
+files may have changed since last startup.
+
+#### Contribution tooling
+
+Four scripts in the `scripts/` directory handle all knowledge sharing
+operations:
+
+**`export_contributions.py`**
+
+Exports locally approved knowledge entries (authority_level 1 or 2,
+applied=true in the feedback table) that were added after a specified
+date or since the last export. Produces three files ready for contribution:
+`contrib_vocabulary.json`, `contrib_grammar_nodes.json`,
+`contrib_grammar_edges.json`.
+
+```bash
+python scripts/export_contributions.py \
+    --since 2024-03-01 \
+    --min_authority_level 1 \
+    --output contrib/
+```
+
+**`merge_contributions.py`**
+
+Merges one or more contribution exports into the canonical data files.
+Deduplicates by term/id. On conflict (same term with different content),
+prefers higher authority_level and flags lower-authority conflicts in a
+review report rather than silently overwriting. Produces an updated set
+of canonical data files ready for commit.
+
+```bash
+python scripts/merge_contributions.py \
+    --canonical data/ \
+    --contributions contrib/adam/ contrib/maria/ \
+    --output data/ \
+    --report merge_report.md
+```
+
+**`import_knowledge.py`**
+
+Imports canonical data files into the local PostgreSQL database. Used
+after pulling updated canonical files from the repository or shared
+endpoint. Supports incremental import (only new entries) or full reseed.
+
+```bash
+python scripts/import_knowledge.py \
+    --input data/ \
+    --mode incremental
+```
+
+**`package_contribution.py`**
+
+For Mode 2: packages a contributor's local approved additions into a
+single archive file suitable for sending to the maintainer. Includes
+a manifest with contributor name, timestamp, entry count, and authority
+levels.
+
+```bash
+python scripts/package_contribution.py \
+    --contributor "Maria Santos" \
+    --output maria_contributions_2024_03_15.zip
+```
+
+#### Admin interface additions
+
+Add a **Contributions** tab to the admin interface with two views:
+
+**Incoming contributions** (Modes 2 and 3):
+- Upload a contribution package (Mode 2) or view pending_contributions
+  table (Mode 3)
+- For each contribution: show the entry, authority level, contributor,
+  and proposed change
+- Actions: Approve (writes to canonical tables and data files), Reject,
+  Edit before approving
+- Batch approve all Level 1 contributions from a known trusted contributor
+
+**Sync status** (all modes):
+- Last seeded date
+- Count of local additions not yet exported
+- For Mode 2: link to the canonical file URL with last-modified date
+- For Mode 3: count of pending contributions from other instances
+- Button: "Export my contributions" (runs export_contributions.py)
+- Button: "Force reseed from canonical" (runs import_knowledge.py --mode full)
+
+#### Configuration
+
+Add to `config/` or environment variables:
+
+```yaml
+# config/knowledge_sharing.yaml
+mode: git                    # git | sync | shared_db
+canonical_url: ""            # Mode 2: URL of hosted canonical files
+reseed_on_startup: false     # Set true in Mode 1/2 after pulls
+contributor_name: "adam"     # Identifies this instance's contributions
+shared_db_url: ""            # Mode 3: connection string for shared database
+shared_db_api_key: ""        # Mode 3: per-contributor API key
+```
+
+#### PROVENANCE.md
+
+A human-readable record in the `data/` directory documenting the sources
+of knowledge in the canonical files. Updated whenever a significant
+contribution is merged. Not machine-parsed — exists for transparency and
+attribution.
+
+```markdown
+# Knowledge Base Provenance
+
+## Contributors
+- Adam (maintainer) — initial structure, curation
+- [Name] — native speaker, household contributor
+- [Name] — native speaker, extended family contributor
+
+## Sources
+- Level 1: Direct native speaker verification (household and family contacts)
+- Level 2: Kapampangan grammar references (list sources here)
+- Level 3: Online Kapampangan learning resources
+
+## Last updated: 2024-03-15
+## Total entries: vocabulary: N, grammar nodes: M
+```
 
 ---
 
@@ -1306,6 +1695,21 @@ Suggested implementation sequence:
 15. Write training data export script
 16. Wire all Docker Compose volumes for config and data
 17. End-to-end test: message → tool calls → MCP retrieval → LLM response → feedback capture → admin review → vocabulary update
+18. Create data/ directory with empty vocabulary.json, grammar_nodes.json,
+    grammar_edges.json and populate with initial seed entries
+19. Write PROVENANCE.md with initial contributor and source records
+20. Write import_knowledge.py — import canonical files into PostgreSQL,
+    generate embeddings for all entries
+21. Write export_contributions.py — export approved local additions
+22. Write merge_contributions.py — merge contributions with conflict
+    detection and review report
+23. Write package_contribution.py — package contributions for Mode 2
+24. Add startup seeding logic to MCP vocabulary and grammar servers
+25. Add Contributions tab to admin interface
+26. Add Sync Status view to admin interface
+27. Write config/knowledge_sharing.yaml with default Mode 1 settings
+28. End-to-end test: add entry locally → export → merge → import →
+    confirm entry appears after reseed
 
 ---
 

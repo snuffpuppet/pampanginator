@@ -31,13 +31,13 @@ services:
   mcp-vocabulary:
     volumes:
       - ./mcp-vocabulary:/app
-      - ./mcp-vocabulary/data:/app/data
+      - ./data:/app/data:ro   # canonical knowledge base — overrides service-local path
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
   mcp-grammar:
     volumes:
       - ./mcp-grammar:/app
-      - ./mcp-grammar/data:/app/data
+      - ./data:/app/data:ro   # canonical knowledge base — overrides service-local path
     command: uvicorn main:app --host 0.0.0.0 --port 8002 --reload
 
 volumes:

@@ -2,7 +2,7 @@
 Kapampangan Tutor — Orchestration App
 
 Starts the FastAPI application, loads tool definitions from config/tools.yaml,
-and mounts the chat and health routers.
+connects to PostgreSQL, and mounts all routers.
 """
 
 from contextlib import asynccontextmanager
@@ -10,9 +10,9 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from routes import chat, health
+from routes import chat, health, feedback, vocab, export, admin_knowledge
 from services.tool_router import load_tools
-from services import llm
+from services import llm, db
 from telemetry import init_telemetry
 from metrics import metrics_endpoint
 from middleware import MetricsMiddleware
@@ -25,7 +25,9 @@ setup_logging()
 async def lifespan(app: FastAPI):
     load_tools("/app/config/tools.yaml")
     llm.init("/app/config/llm.yaml")
+    await db.connect()
     yield
+    await db.disconnect()
 
 
 app = FastAPI(
@@ -40,9 +42,11 @@ app = FastAPI(
         "- Vocabulary: `http://localhost:8001/docs`\n"
         "- Grammar graph: `http://localhost:8002/docs`"
     ),
-    version="0.1.0",
+    version="0.2.0",
     openapi_tags=[
         {"name": "chat", "description": "Conversation endpoint — streams SSE responses"},
+        {"name": "feedback", "description": "Interaction feedback and correction review"},
+        {"name": "vocabulary", "description": "Vocabulary search and contribution proxy"},
         {"name": "health", "description": "Liveness probe"},
     ],
     lifespan=lifespan,
@@ -55,6 +59,10 @@ app.add_middleware(MetricsMiddleware)
 app.add_route("/metrics", metrics_endpoint)
 
 app.include_router(chat.router, prefix="/api")
+app.include_router(feedback.router, prefix="/api")
+app.include_router(vocab.router, prefix="/api")
+app.include_router(export.router, prefix="/api")
+app.include_router(admin_knowledge.router, prefix="/api")
 app.include_router(health.router)
 
 # Serve the React build as static files if present

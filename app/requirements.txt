@@ -4,6 +4,7 @@ anthropic==0.36.0
 pyyaml==6.0.2
 httpx==0.27.2
 pydantic==2.9.2
+asyncpg==0.30.0
 opentelemetry-api
 opentelemetry-sdk
 opentelemetry-exporter-otlp-proto-http
@@ -11,3 +12,4 @@ opentelemetry-instrumentation-fastapi
 opentelemetry-instrumentation-httpx
 prometheus-client>=0.20.0
 python-json-logger==2.0.7
+python-multipart==0.0.20

@@ -20,6 +20,7 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  interactionId?: string   // set on assistant messages after the backend logs the interaction
 }
 
 const WELCOME: Message = {
@@ -91,6 +92,7 @@ export const useConversation = create<ConversationStore>()(
                 role: 'assistant',
                 content: s.streamingText,
                 timestamp: Date.now(),
+                interactionId: result.interactionId ?? undefined,
               },
             ],
             streamingText: '',

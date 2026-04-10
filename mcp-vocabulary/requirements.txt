@@ -7,3 +7,5 @@ opentelemetry-exporter-otlp-proto-http
 opentelemetry-instrumentation-fastapi
 prometheus-client>=0.20.0
 python-json-logger==2.0.7
+sentence-transformers==3.3.1
+asyncpg==0.30.0

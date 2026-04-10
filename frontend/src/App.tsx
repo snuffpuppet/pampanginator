@@ -6,6 +6,7 @@ import Translate from './components/Translate'
 import Grammar from './components/Grammar'
 import Vocabulary from './components/Vocabulary'
 import Compare from './components/Compare'
+import Admin from './components/Admin'
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="/grammar" element={<Grammar />} />
             <Route path="/vocabulary" element={<Vocabulary />} />
             <Route path="/compare" element={<Compare />} />
+            <Route path="/admin" element={<Admin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

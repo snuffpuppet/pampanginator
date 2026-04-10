@@ -39,6 +39,7 @@ services:
       - SERVICE_VERSION=0.1.0
     volumes:
       - ./mcp-vocabulary/data:/app/data   # Mount so vocabulary.json can be updated without rebuild
+      - ./frontend/src/data/kaikki.json:/app/data/vocabulary.json:ro  # resolve symlink inside container
     depends_on:
       - otel-collector
 
@@ -91,6 +92,24 @@ services:
     ports:
       - "9090:9090"   # Prometheus UI
 
+  loki:
+    image: grafana/loki:3.3.2
+    command: ["-config.file=/etc/loki.yaml"]
+    volumes:
+      - ./config/loki.yaml:/etc/loki.yaml
+      - loki-data:/loki
+    ports:
+      - "3100:3100"   # Loki query API (optional — useful for curl debugging)
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    command: ["-config.file=/etc/promtail.yaml"]
+    volumes:
+      - ./config/promtail.yaml:/etc/promtail.yaml
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # read container logs via Docker socket
+    depends_on:
+      - loki
+
   grafana:
     image: grafana/grafana:12.4.2
     ports:
@@ -112,6 +131,7 @@ services:
     depends_on:
       - tempo
       - prometheus
+      - loki
 
   grafana-init:
     image: curlimages/curl:8.19.0
@@ -125,4 +145,5 @@ services:
 
 volumes:
   tempo-data:
+  loki-data:
   grafana-data:

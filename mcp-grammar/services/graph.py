@@ -12,6 +12,7 @@ Traversal patterns:
 """
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,8 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 
 from metrics import GRAMMAR_TRAVERSALS_TOTAL, GRAMMAR_TRAVERSAL_DURATION
+
+log = logging.getLogger(__name__)
 
 tracer = trace.get_tracer(__name__)
 
@@ -34,6 +37,7 @@ def load() -> None:
 
     path = Path(GRAPH_PATH)
     if not path.exists():
+        log.warning("grammar graph file not found", extra={"path": GRAPH_PATH})
         return
 
     with open(path, encoding="utf-8") as f:
@@ -46,6 +50,8 @@ def load() -> None:
     for edge in data.get("edges", []):
         _out_edges.setdefault(edge["from"], []).append(edge)
         _in_edges.setdefault(edge["to"], []).append(edge)
+
+    log.info("grammar graph loaded", extra={"path": GRAPH_PATH, "nodes": len(_nodes), "edges": edge_count()})
 
 
 def traverse(root: str, relationship: Optional[str] = None) -> dict:
@@ -72,10 +78,16 @@ def traverse(root: str, relationship: Optional[str] = None) -> dict:
             )
             GRAMMAR_TRAVERSALS_TOTAL.labels(relationship=rel_label).inc(exemplar=exemplar)
 
+            found = len(result.get("results", [])) > 0
+            log.info(
+                "grammar traversal",
+                extra={"root": root, "relationship": rel_label, "found": found, "count": len(result.get("results", [])), "duration_s": round(duration, 4)},
+            )
             return result
         except Exception as e:
             span.set_status(StatusCode.ERROR, str(e))
             span.record_exception(e)
+            log.error("grammar traversal error", extra={"root": root, "error": str(e)})
             raise
 
 

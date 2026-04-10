@@ -16,6 +16,9 @@ from services import llm
 from telemetry import init_telemetry
 from metrics import metrics_endpoint
 from middleware import MetricsMiddleware
+from logging_setup import setup_logging
+
+setup_logging()
 
 
 @asynccontextmanager
@@ -25,7 +28,25 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Kapampangan Tutor", lifespan=lifespan)
+app = FastAPI(
+    title="Kapampangan Tutor — Orchestration API",
+    description=(
+        "Orchestration layer for the Kapampangan language tutor. "
+        "Accepts a full conversation history, calls the configured LLM backend "
+        "(Anthropic Claude or any OpenAI-compatible model), and streams the response as SSE. "
+        "Tool calls to the vocabulary and grammar MCP servers are handled transparently "
+        "inside the agentic loop.\n\n"
+        "**MCP services** (test vocabulary and grammar lookups directly):\n"
+        "- Vocabulary: `http://localhost:8001/docs`\n"
+        "- Grammar graph: `http://localhost:8002/docs`"
+    ),
+    version="0.1.0",
+    openapi_tags=[
+        {"name": "chat", "description": "Conversation endpoint — streams SSE responses"},
+        {"name": "health", "description": "Liveness probe"},
+    ],
+    lifespan=lifespan,
+)
 
 # Must come before route registration so auto-instrumentation covers all routes
 init_telemetry(app)

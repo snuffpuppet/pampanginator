@@ -8,6 +8,7 @@ When the model returns a tool call, dispatch() sends the parameters to the
 appropriate MCP server and returns the result.
 """
 
+import logging
 import os
 import yaml
 import httpx
@@ -16,6 +17,8 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 
 from metrics import TOOL_CALLS_TOTAL
+
+log = logging.getLogger(__name__)
 
 tracer = trace.get_tracer(__name__)
 
@@ -98,14 +101,19 @@ async def dispatch(tool_name: str, parameters: dict, session_id: str = "") -> di
         span.set_attribute("tool.endpoint", endpoint)
         span.set_attribute("kapampangan.session_id", session_id)
         TOOL_CALLS_TOTAL.labels(tool_name=tool_name).inc()
+        log.info("tool dispatch", extra={"tool": tool_name, "endpoint": endpoint, "params": parameters, "session_id": session_id})
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.request(method, endpoint, json=parameters)
                 response.raise_for_status()
-                return response.json()
+                result = response.json()
+                log.info("tool result", extra={"tool": tool_name, "status": response.status_code, "result_keys": list(result.keys()) if isinstance(result, dict) else None})
+                return result
         except httpx.HTTPStatusError as e:
             span.set_status(StatusCode.ERROR, f"{tool_name} returned {e.response.status_code}")
+            log.warning("tool http error", extra={"tool": tool_name, "status": e.response.status_code, "detail": e.response.text})
             return {"error": f"{tool_name} returned {e.response.status_code}", "detail": e.response.text}
         except httpx.RequestError as e:
             span.set_status(StatusCode.ERROR, f"{tool_name} unreachable")
+            log.error("tool unreachable", extra={"tool": tool_name, "error": str(e)})
             return {"error": f"{tool_name} unreachable", "detail": str(e)}

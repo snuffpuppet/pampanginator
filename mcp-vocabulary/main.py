@@ -13,6 +13,9 @@ from services.index import load
 from telemetry import init_telemetry
 from metrics import metrics_endpoint
 from middleware import MetricsMiddleware
+from logging_setup import setup_logging
+
+setup_logging()
 
 
 @asynccontextmanager
@@ -21,7 +24,22 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Kapampangan Vocabulary MCP", lifespan=lifespan)
+app = FastAPI(
+    title="Kapampangan Vocabulary MCP",
+    description=(
+        "Vocabulary lookup service for the Kapampangan language tutor. "
+        "Indexes the kaikki.org / Wiktionary Kapampangan extract (~1,600 entries) "
+        "and serves it via exact-match, inflected-form, prefix, and English-gloss search.\n\n"
+        "Called by the orchestration layer's agentic tool loop. "
+        "Can also be queried directly here for manual testing."
+    ),
+    version="0.1.0",
+    openapi_tags=[
+        {"name": "lookup", "description": "Vocabulary search endpoints"},
+        {"name": "status", "description": "Service health and index stats"},
+    ],
+    lifespan=lifespan,
+)
 
 init_telemetry(app)
 

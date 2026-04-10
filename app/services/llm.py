@@ -7,7 +7,9 @@ tool-call loop runs for both backends when tools_enabled is true.
 """
 
 import json
+import logging
 import os
+import re
 import time
 import yaml
 from pathlib import Path
@@ -18,6 +20,8 @@ from opentelemetry.trace import StatusCode
 
 from .tool_router import get_tool_definitions, dispatch
 from metrics import LLM_TOKENS_TOTAL, LLM_CALL_DURATION
+
+log = logging.getLogger(__name__)
 
 LLM_CONFIG_PATH = "/app/config/llm.yaml"
 SYSTEM_PROMPT_PATH = "/app/config/system_prompt.md"
@@ -127,6 +131,18 @@ async def _complete_anthropic(
                         response.usage.output_tokens, exemplar=exemplar
                     )
 
+                log.info(
+                    "llm call complete",
+                    extra={
+                        "model": model,
+                        "stop_reason": response.stop_reason,
+                        "input_tokens": response.usage.input_tokens,
+                        "output_tokens": response.usage.output_tokens,
+                        "duration_s": round(duration, 3),
+                        "session_id": session_id,
+                    },
+                )
+
                 if response.stop_reason == "end_turn":
                     text = "".join(b.text for b in response.content if hasattr(b, "text"))
                     outer_span.set_attribute("kapampangan.tools_used_count", len(tools_used))
@@ -135,10 +151,12 @@ async def _complete_anthropic(
                 if response.stop_reason == "tool_use":
                     tool_calls = [b for b in response.content if b.type == "tool_use"]
                     outer_span.set_attribute("kapampangan.tools_requested", len(tool_calls))
+                    log.info("tool calls requested", extra={"tools": [b.name for b in tool_calls], "session_id": session_id})
                     tool_results = []
                     for block in tool_calls:
-                        tools_used.append(block.name)
                         result = await dispatch(block.name, block.input, session_id=session_id)
+                        if "error" not in result:
+                            tools_used.append(block.name)
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -151,13 +169,62 @@ async def _complete_anthropic(
                     continue
 
                 # Unexpected stop reason — return whatever text we have
+                log.warning("unexpected stop reason", extra={"stop_reason": response.stop_reason, "session_id": session_id})
                 text = "".join(b.text for b in response.content if hasattr(b, "text"))
                 return text, tools_used
 
         except Exception as e:
             outer_span.set_status(StatusCode.ERROR, str(e))
             outer_span.record_exception(e)
+            log.error("llm call failed", extra={"error": str(e), "session_id": session_id})
             raise
+
+
+def _try_parse_text_tool_call(content: str) -> tuple[str, dict] | None:
+    """
+    Some smaller models (e.g. llama3.2) output tool calls as plain text content
+    instead of using the tool_calls API mechanism, producing output like:
+        {"name": grammar_lookup, "parameters": {"root": "..."}}
+    Detect and parse these so the agentic loop can handle them correctly
+    rather than leaking raw JSON to the user.
+    Returns (tool_name, parameters) or None if content is not a tool call.
+    """
+    content = content.strip()
+    if not content.startswith("{"):
+        return None
+
+    known_tools = {t["function"]["name"] for t in get_tool_definitions(format="openai")}
+
+    data = None
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        # Fix unquoted identifier values (with or without spaces):
+        #   `"name": grammar_lookup,`     → `"name": "grammar_lookup",`
+        #   `"name": vocabulary Lookup,`  → `"name": "vocabulary Lookup",`
+        fixed = re.sub(r":\s*([A-Za-z_][A-Za-z0-9_ ]*?)\s*([,}])", r': "\1"\2', content)
+        # Fix spurious backslash before a closing quote in key names:
+        #   `"term\"` → `"term"`
+        fixed = re.sub(r'"([^"\\]*)\\"', r'"\1"', fixed)
+        try:
+            data = json.loads(fixed)
+        except json.JSONDecodeError:
+            return None
+
+    if not isinstance(data, dict):
+        return None
+
+    name = data.get("name")
+    if isinstance(name, str):
+        # Normalise: some models use wrong case or spaces ("vocabulary Lookup" → "vocabulary_lookup")
+        normalized = name.lower().replace(" ", "_")
+        if normalized in known_tools:
+            name = normalized
+
+    params = data.get("parameters") or data.get("arguments") or {}
+    if name in known_tools and isinstance(params, dict):
+        return name, params
+    return None
 
 
 async def _complete_openai_compatible(
@@ -224,9 +291,22 @@ async def _complete_openai_compatible(
                 finish_reason = choice.get("finish_reason")
                 message = choice["message"]
 
+                log.info(
+                    "llm call complete",
+                    extra={
+                        "model": model,
+                        "finish_reason": finish_reason,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "duration_s": round(duration, 3),
+                        "session_id": session_id,
+                    },
+                )
+
                 if finish_reason == "tool_calls":
                     tool_calls = message.get("tool_calls", [])
                     outer_span.set_attribute("kapampangan.tools_requested", len(tool_calls))
+                    log.info("tool calls requested", extra={"tools": [tc["function"]["name"] for tc in tool_calls], "session_id": session_id})
                     current_messages.append({
                         "role": "assistant",
                         "content": message.get("content"),
@@ -235,8 +315,9 @@ async def _complete_openai_compatible(
                     for tc in tool_calls:
                         tool_name = tc["function"]["name"]
                         tool_input = json.loads(tc["function"]["arguments"])
-                        tools_used.append(tool_name)
                         result = await dispatch(tool_name, tool_input, session_id=session_id)
+                        if "error" not in result:
+                            tools_used.append(tool_name)
                         current_messages.append({
                             "role": "tool",
                             "tool_call_id": tc["id"],
@@ -245,6 +326,21 @@ async def _complete_openai_compatible(
                     continue
 
                 text = message.get("content") or ""
+
+                # Detect text-based tool call: some models output the tool call
+                # as plain text content instead of using the tool_calls API.
+                if text:
+                    parsed = _try_parse_text_tool_call(text)
+                    if parsed is not None:
+                        tool_name, tool_input = parsed
+                        outer_span.set_attribute("kapampangan.tools_requested", 1)
+                        result = await dispatch(tool_name, tool_input, session_id=session_id)
+                        if "error" not in result:
+                            tools_used.append(tool_name)
+                        current_messages.append({"role": "assistant", "content": text})
+                        current_messages.append({"role": "user", "content": str(result)})
+                        continue
+
                 outer_span.set_attribute("kapampangan.tools_used_count", len(tools_used))
                 return text, tools_used
 

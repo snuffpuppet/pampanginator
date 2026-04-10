@@ -167,14 +167,177 @@ FastAPI app and sent with every call. The app is responsible for:
 
 No session state is held by the LLM or the MCP servers.
 
-### Decision 3 — System prompt encodes persona and interaction rules only
+### Decision 3 — System prompt encodes generative grammar rules AND persona
 
-As the MCP servers are built out, the system prompt should be progressively reduced
-to persona and behaviour rules only. Grammar rules that can be represented in the
-knowledge graph should migrate there. This keeps the system prompt stable and short,
-reducing token cost per call.
+The system prompt carries two distinct and permanent responsibilities:
+
+1. **Persona and interaction behaviour** — tone, correction style, encouragement,
+   confidence signalling, scenario handling
+2. **Generative grammar rules** — the abstract structural patterns of Kapampangan
+   that allow the LLM to reason about constructions not explicitly covered by the
+   grammar graph
+
+The system prompt must never be reduced to persona only. The generative grammar
+rules are a permanent, load-bearing component of every API call. They are not
+a temporary measure to be migrated into the graph — they serve a fundamentally
+different purpose to the graph and the two are complementary, not alternatives.
 
 Current system prompt file: `config/system_prompt.md`
+
+### Decision 3a — Three-Layer Knowledge Architecture (core design tenet)
+
+This decision captures a fundamental constraint of using an LLM for a
+low-resource language and explains why the system requires three complementary
+knowledge layers rather than any single one.
+
+#### Background — why this matters for Kapampangan
+
+Kapampangan is a low-resource language. LLMs have seen relatively little
+Kapampangan text during training. This means the model's internal linguistic
+representations — the statistical patterns absorbed from exposure to text —
+are thin compared to high-resource languages like English or Spanish.
+
+This has two specific consequences that pull in opposite directions:
+
+**Consequence 1:** The LLM cannot be trusted to recall correct Kapampangan
+word forms from training memory alone. Irregular verb forms, complex focus
+system interactions, and forms that do not follow predictable rules are
+particularly at risk of confident hallucination.
+
+**Consequence 2:** The LLM cannot be replaced by a data retrieval system.
+Producing natural, contextually appropriate Kapampangan requires genuine
+linguistic reasoning — knowing when a rule applies, how rules interact, and
+what sounds natural versus merely correct. This reasoning capability cannot
+come from data retrieval alone. It requires a model that has sufficient
+language-specific training to synthesise retrieved facts into fluent output.
+
+Neither problem alone is solvable by any single mechanism. The three-layer
+architecture addresses both simultaneously.
+
+#### The three layers
+
+**Layer 1 — Generative grammar rules (system prompt)**
+
+The system prompt encodes the abstract structural patterns of Kapampangan:
+the verb focus system, aspect formation, pronoun ordering rules, case markers,
+negation, ligatures, and the mandatory-pronoun constraint.
+
+These rules are *generative* — a model that understands them can apply them
+to words it has never encountered and reason about constructions not
+explicitly stored anywhere in the data layer.
+
+What this layer provides: **generalisation**. When a word or construction is
+not in the grammar graph, the LLM falls back on these rules and produces a
+reasonable attempt. For regular, predictable forms this is reliable. For
+irregular forms the rules will fail — which is why Layer 2 exists.
+
+What this layer cannot provide: guaranteed correctness for irregular and
+unpredictable forms. Rules describe the majority pattern. A model applying
+the -in- infix rule to an irregular root will produce a confidently wrong
+answer. Rules cannot encode every exception.
+
+**Layer 2 — Verified specific forms (grammar MCP graph)**
+
+The grammar graph stores specific, authoritative word forms — particularly
+irregular forms, commonly confused forms, and high-frequency roots where
+correct recall matters most.
+
+The graph is not a complete grammar engine. It does not replace the rules in
+the system prompt. It stores the specific instances where rule application
+would fail or be unreliable, providing the LLM with a verified answer to
+retrieve rather than a rule to apply incorrectly.
+
+What this layer provides: **recall accuracy for exceptions**. When the LLM
+retrieves a form from the graph, it does not need to apply a rule — it has
+the correct answer. This eliminates the class of errors that arise from
+applying regular rules to irregular forms.
+
+What this layer cannot provide: linguistic intuition or naturalness
+judgements. The graph returns structured data. The LLM still has to synthesise
+that data into natural language. If the model has thin Kapampangan training,
+it may retrieve the correct form but assemble a stilted or unnatural sentence
+around it.
+
+**Layer 3 — Vocabulary with semantic context (vocabulary MCP RAG)**
+
+The vocabulary RAG provides word definitions, example sentences, cultural
+notes, domain-specific vocabulary, and usage context. It compensates for the
+LLM's limited Kapampangan lexical coverage from training.
+
+What this layer provides: **lexical grounding**. Words and phrases the model
+may not know from training are available at query time, with usage examples
+that give the model context for how to use them naturally.
+
+What this layer cannot provide: grammar. The RAG is lexical, not structural.
+It does not know that *mangan* belongs to actor focus or that its completed
+aspect is irregular.
+
+#### How the layers work together
+
+The layers are complementary. Each covers what the others cannot:
+
+```
+System prompt rules   → generalisation for uncovered constructions
+Grammar graph         → verified accuracy for irregular / high-stakes forms
+Vocabulary RAG        → lexical coverage beyond training data
+LLM                   → synthesises all three into natural language output
+```
+
+A query flows through all three layers simultaneously. The LLM receives the
+system prompt rules, any graph results it retrieved, and any vocabulary
+entries retrieved, and synthesises them into a response. The quality of that
+synthesis depends on the LLM's underlying Kapampangan competence — which is
+why model selection matters more than any architectural decision for this
+language specifically.
+
+#### Implications for building and maintaining the system
+
+**When adding to the grammar graph:**
+
+Ask: would a capable LLM applying the system prompt rules reliably produce
+this form? If yes, the form is regular — it may not need to be in the graph.
+If no, the form is irregular or high-risk — it belongs in the graph as a
+verified override.
+
+Priority for graph population: irregular verb forms, commonly confused
+constructions, high-frequency roots, forms where the rule produces a
+plausible but wrong answer.
+
+**When modifying the system prompt:**
+
+The grammar rules section is not optional and must not be shortened to reduce
+token cost without explicit justification. Removing generative rules degrades
+the system's ability to handle constructions not covered by the graph. If
+token cost is a concern, reduce the persona section or compress examples —
+not the grammar rules.
+
+**When selecting an LLM:**
+
+The architecture does not compensate for an LLM with insufficient Kapampangan
+training. A weak model will fail to synthesise retrieved facts into natural
+output regardless of how well-structured the retrieval is. For Kapampangan
+specifically, the minimum viable model is Claude Sonnet class or equivalent.
+Locally hosted small models (sub-7B parameters) are not suitable as the
+primary inference engine for this language.
+
+**When the system produces an error:**
+
+Identify which layer the error originates in before attempting a fix:
+- Wrong word form on a regular verb → system prompt rule may be unclear
+- Wrong word form on an irregular verb → the form is missing from the graph
+- Correct forms, unnatural sentence → LLM synthesis limitation, model quality
+- Unknown word → vocabulary RAG gap
+- Confident wrong answer on complex construction → LLM training limitation,
+  may not be fixable by any data change
+
+#### What this architecture cannot fix
+
+Generation naturalness for complex constructions is bounded by the LLM's
+Kapampangan training data. No amount of retrieved grammar data or rules
+compensates for a model that has not seen enough Kapampangan to internalise
+the feel of the language. This system is designed to be an effective learning
+and assistance tool. It is not designed to replace native speaker review for
+authoritative translation.
 
 ### Decision 4 — Vocabulary as JSON, Grammar as graph
 

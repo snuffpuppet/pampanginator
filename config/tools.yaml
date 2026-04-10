@@ -35,6 +35,9 @@ tools:
       (actor/object/goal/locative/circumstantial), pronouns, case markers,
       particles, demonstratives, and word order rules.
       Do NOT call this for individual words or vocabulary — use vocabulary_lookup instead.
+      Do NOT call this for Filipino/Tagalog politeness particles (po, ho, opo, po kayo)
+      or honorifics — these are code-switching elements, not Kapampangan grammar structures.
+      Answer questions about po/ho from training knowledge directly.
       Valid root values are Kapampangan verb roots (e.g. 'mangan', 'sulat', 'basa')
       or grammar concept IDs: actor_focus, object_focus, goal_focus, locative_focus,
       circumstantial_focus, progressive_aspect, completed_aspect, contemplated_aspect,

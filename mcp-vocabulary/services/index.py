@@ -11,6 +11,7 @@ scripts/fetch-kaikki.mjs in the frontend source tree.
 """
 
 import json
+import logging
 import re
 import time
 from pathlib import Path
@@ -19,6 +20,8 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 
 from metrics import VOCABULARY_LOOKUPS_TOTAL, VOCABULARY_LOOKUP_DURATION
+
+log = logging.getLogger(__name__)
 
 tracer = trace.get_tracer(__name__)
 
@@ -44,10 +47,12 @@ def load() -> None:
 
     path = Path(VOCAB_PATH)
     if not path.exists():
+        log.warning("vocabulary file not found", extra={"path": VOCAB_PATH})
         return
 
     with open(path, encoding="utf-8") as f:
         _entries = json.load(f)
+    log.info("vocabulary index loaded", extra={"path": VOCAB_PATH, "entries": len(_entries)})
 
     _exact_index = {}
     _form_index = {}
@@ -89,10 +94,15 @@ def lookup(term: str, limit: int = 6) -> list[dict]:
                 result="found" if results else "not_found"
             ).inc(exemplar=exemplar)
 
+            log.info(
+                "vocabulary lookup",
+                extra={"term": term, "found": len(results) > 0, "count": len(results), "duration_s": round(duration, 4)},
+            )
             return results
         except Exception as e:
             span.set_status(StatusCode.ERROR, str(e))
             span.record_exception(e)
+            log.error("vocabulary lookup error", extra={"term": term, "error": str(e)})
             raise
 
 

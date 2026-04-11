@@ -51,6 +51,8 @@ The vocabulary, grammar, and orchestration layers have completely different rate
 
 For service-specific work, open Claude Code inside the service directory (`cd app && claude`, etc.). Open at the repo root only for cross-service changes.
 
+**Composition rule:** Each sub-project's `docker-compose.yml` and `Makefile` are the single source of truth for that service. The root `Makefile` and `docker-compose.yml` orchestrate by delegating to sub-project Makefiles — they never duplicate service definitions. A change to a sub-project's compose or Makefile takes effect automatically in both standalone and full-stack modes without any corresponding change at the root. Docker Compose `include:` is not used because it requires v2.20+; instead, the root `Makefile up` target calls each sub-project `make up` in sequence, then starts the root-owned observability stack.
+
 ---
 
 ## Key Design Decisions
@@ -269,6 +271,16 @@ Third-party infrastructure images must be pinned to a specific version tag in `d
 Reason: `grafana/tempo:latest` resolved to a version that introduced a Kafka-default ingestion path, breaking startup without config changes — discovered during debugging, not at a deliberate upgrade. Breaking config changes in minor versions of these projects are common and not clearly flagged.
 
 Upgrade process: pull the new image, read migration notes, update affected config files, commit both together with the version delta in the commit message.
+
+---
+
+### Decision 23 — Shared Docker network for cross-project service discovery
+
+All three sub-projects and the observability stack join an external Docker bridge network named `pampanginator`. This allows services in separate Docker Compose projects to reach each other by container name (`http://mcp-vocabulary:8001`, `http://otel-collector:4318`) rather than via host ports.
+
+Each sub-project Makefile creates the network with `docker network create pampanginator 2>/dev/null || true` before starting its services, making standalone mode self-contained: `cd app && make up` works without any prior setup. The network persists between `make down` calls — it has no state and is recreated idempotently on the next `make up`.
+
+Only the services that need cross-project visibility join `pampanginator`: the three application services (`app`, `mcp-vocabulary`, `mcp-grammar`) and `otel-collector`. Databases stay on their sub-project's private default network.
 
 ---
 

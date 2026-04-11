@@ -15,7 +15,7 @@ User browser
     ↓
 app (port 8000)               Orchestration API  [+ compiled React SPA in prod]
     ├── mcp-vocabulary  (port 8001)    Vocabulary MCP server (pgvector semantic search)
-    └── grammar (port 8002)   Grammar graph MCP server (pgvector + graph traversal)
+    └── mcp-grammar     (port 8002)    Grammar graph MCP server (pgvector + graph traversal)
 
 Databases (each service owns its own — no sharing)
     ├── app-postgres     (port 5432)   interactions, feedback, pending_contributions
@@ -35,7 +35,7 @@ Observability stack
 
 **mcp-vocabulary** — FastAPI service backed by pgvector. Generates sentence-transformer embeddings (all-MiniLM-L6-v2, 384 dims) at startup for semantic search. Seeds from `mcp-vocabulary/data/vocabulary.json` on first boot (or when `RESEED_ON_STARTUP=true`). Exposes vocabulary search and contribution endpoints.
 
-**grammar** — FastAPI service backed by pgvector. Same embedding model. Seeds from `grammar/data/grammar_nodes.json` and `grammar/data/grammar_edges.json`. Exposes graph traversal using two-stage retrieval: semantic similarity to find anchor nodes, graph edges for relationship expansion.
+**mcp-grammar** — FastAPI service backed by pgvector. Same embedding model. Seeds from `mcp-grammar/data/grammar_nodes.json` and `mcp-grammar/data/grammar_edges.json`. Exposes graph traversal using two-stage retrieval: semantic similarity to find anchor nodes, graph edges for relationship expansion.
 
 ---
 
@@ -43,12 +43,12 @@ Observability stack
 
 ### Prerequisites
 
-- Docker and Docker Compose
+- Docker with Docker Compose v2.19 or later
 - An OpenRouter API key (get one at https://openrouter.ai/keys)
 
 No Node.js installation is required on the host machine.
 
-### Configure
+### 1. Configure
 
 Copy `.env.example` to `.env` and fill in the values:
 
@@ -74,50 +74,61 @@ VITE_ADMIN_PASSWORD=your-admin-password
 
 The model and backend are configured in `app/config/llm.yaml`. The `OPENROUTER_MODEL` env var overrides the model at runtime without a rebuild.
 
-### Dev mode (live reload)
+### 2. Start
 
 ```bash
-docker compose up
+make up
 ```
 
-Starts three containers: the FastAPI app on `:8000` (source volume-mounted, `--reload`), the Vite dev server on `:5173` (HMR), and app-postgres. The Vite server proxies all `/api/*` requests to FastAPI.
+This creates a `pampanginator` Docker bridge network (if it doesn't exist), starts all three services and their databases, then starts the observability stack. All services discover each other by name on that network.
 
-**Open `http://localhost:5173`** to use the app.
+**Open `http://localhost:5173`** — the Vite dev server with HMR. All `/api/*` requests are proxied to FastAPI on `:8000`.
 
-> **Note:** After adding new Python dependencies to `requirements.txt`, run `docker compose build app` to reinstall them — hot-reload picks up code changes but not new packages.
-
-### Prod mode (container rebuild)
+On first boot, `mcp-vocabulary` and `mcp-grammar` detect empty databases and seed automatically from their canonical data files. No manual seeding step is required.
 
 ```bash
-docker compose up          # from repo root, or:
-docker compose up          # from app/ after: docker compose build app
+make down     # stop everything
+make logs-app # follow logs for a specific service
 ```
 
-The app `Dockerfile` uses a multi-stage build: a Node.js stage compiles the React frontend, the compiled output is copied into the Python runtime stage. FastAPI serves the SPA as static files alongside the API. No local Node.js required.
+### Dev workflow
 
-**Open `http://localhost:8000`** — everything is served from this single port.
+Source directories are volume-mounted into each container — Python and config changes hot-reload without a rebuild. Frontend changes are handled by Vite HMR.
 
-### Seeding
-
-The `vocab` and `grammar` services seed their databases automatically on first boot when their tables are empty. No manual step is required on a clean install.
-
-**To force a full reseed** (e.g. after pulling updated canonical data files):
+After adding new Python dependencies to `requirements.txt`, rebuild the affected image:
 
 ```bash
-RESEED_ON_STARTUP=true docker compose up
+docker compose -f app/docker-compose.yml build app
 ```
 
-**To reseed a single service:**
+### Prod mode
+
+The app `Dockerfile` uses a multi-stage build: a Node.js stage compiles the React frontend, the output is copied into the Python runtime stage. FastAPI then serves the SPA as static files alongside the API. No separate frontend server or local Node.js is required.
 
 ```bash
-RESEED_ON_STARTUP=true docker compose up mcp-vocabulary
-RESEED_ON_STARTUP=true docker compose up grammar
+docker compose -f app/docker-compose.yml build app
+make up
+```
+
+**Open `http://localhost:8000`** — the full app served from a single port.
+
+### Reseeding
+
+The `mcp-vocabulary` and `mcp-grammar` services seed automatically on first boot. To force a full reseed after pulling updated canonical data files:
+
+```bash
+# Reseed all services
+RESEED_ON_STARTUP=true make up
+
+# Reseed a single service (from its own directory)
+cd mcp-vocabulary && RESEED_ON_STARTUP=true make up
+cd mcp-grammar    && RESEED_ON_STARTUP=true make up
 ```
 
 Canonical data files:
 - `mcp-vocabulary/data/vocabulary.json`
-- `grammar/data/grammar_nodes.json`
-- `grammar/data/grammar_edges.json`
+- `mcp-grammar/data/grammar_nodes.json`
+- `mcp-grammar/data/grammar_edges.json`
 
 ---
 
@@ -157,7 +168,7 @@ make test-build     # force-rebuild the app test image after changing requiremen
 
 Tests use `pytest-asyncio` with `asyncio_mode = auto`. The test app is a minimal FastAPI instance with all routes registered but no lifespan, telemetry, or static file mount. Each test patches only the specific service calls it exercises.
 
-Each of `mcp-vocabulary/` and `grammar/` has an equivalent test setup under their own directories.
+Each of `mcp-vocabulary/` and `mcp-grammar/` has an equivalent test setup under their own directories.
 
 ### Test infrastructure
 
@@ -252,7 +263,7 @@ The mcp-vocabulary server also exposes the data to the agentic loop: when the LL
 
 ### Vocabulary data lifecycle
 
-Canonical data lives in `mcp-vocabulary/data/vocabulary.json` (plus `grammar/data/grammar_nodes.json` and `grammar/data/grammar_edges.json`). On first boot, each MCP server checks whether its table is empty and seeds from these files. Set `RESEED_ON_STARTUP=true` to force a full re-seed.
+Canonical data lives in `mcp-vocabulary/data/vocabulary.json` (plus `mcp-grammar/data/grammar_nodes.json` and `mcp-grammar/data/grammar_edges.json`). On first boot, each MCP server checks whether its table is empty and seeds from these files. Set `RESEED_ON_STARTUP=true` to force a full re-seed.
 
 To manage vocabulary outside the UI, use the scripts in `mcp-vocabulary/scripts/`:
 
@@ -421,7 +432,7 @@ mcp-vocabulary/          Vocabulary MCP server
   Dockerfile.test
   Makefile               up, down, logs, test, test-fast, test-build, shell
 
-grammar/                 Grammar graph MCP server
+mcp-grammar/             Grammar graph MCP server
   data/
     grammar_nodes.json   Canonical grammar concept nodes (source of truth)
     grammar_edges.json   Canonical grammar relationship edges (source of truth)
@@ -437,8 +448,9 @@ grammar/                 Grammar graph MCP server
   tests/                 Unit tests
   Dockerfile
   Dockerfile.test
+  Makefile               up, down, logs, test, test-fast, test-build, shell
 
-docker-compose.yml       Full dev stack (includes all three services + observability)
+docker-compose.yml       Observability stack; root Makefile delegates sub-projects then starts this
 docker-compose.test.yml  Test runner definitions (all three suites)
 Makefile                 test, test-vocab, test-grammar, test-all, up, down, build
 ```

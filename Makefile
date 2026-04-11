@@ -38,9 +38,6 @@ test-all:
 ## Start the full dev stack
 up:
 	$(COMPOSE) up -d
-	$(MAKE) -C app up
-	$(MAKE) -C mcp-vocabulary up
-	$(MAKE) -C mcp-grammar up
 
 ## Start the full dev stack including the Vite frontend dev server (:5173)
 frontend:
@@ -49,9 +46,6 @@ frontend:
 ## Stop the dev stack
 down:
 	$(COMPOSE) down
-	$(MAKE) -C app down
-	$(MAKE) -C mcp-vocabulary down
-	$(MAKE) -C mcp-grammar down
 
 ## Build the full dev stack
 build:

@@ -1,21 +1,17 @@
-# Root compose delegates to each service's own docker-compose.yml via include:.
-# This ensures 'make up' at the root follows the same execution path as
-# 'make up' inside each service directory.
+# Observability stack for the full dev environment.
+# Sub-project services are started independently via their own docker-compose.yml
+# files — 'make up' at the repo root delegates to each sub-project Makefile and
+# then starts this file. Each sub-project can also be started standalone.
 #
-# The observability stack is defined here — it is a root-level concern shared
-# across all services and has no standalone equivalent.
+# Compatible with Docker Compose v2.19+.
 #
 # Usage:
 #   make up              # full dev stack (all services + observability)
 #   make up-app          # app service only  (delegates to app/Makefile)
 #   make up-vocab        # vocab service only
 #   make up-grammar      # grammar service only
-#   docker compose --profile frontend up   # full stack + Vite dev server
 
-include:
-  - app/docker-compose.yml
-  - mcp-vocabulary/docker-compose.yml
-  - mcp-grammar/docker-compose.yml
+version: "3.9"
 
 services:
 
@@ -27,6 +23,9 @@ services:
     ports:
       - "4318:4318"   # OTLP HTTP receiver — services send spans here
       - "8888:8888"   # Collector self-metrics (optional)
+    networks:
+      - default
+      - pampanginator
     depends_on:
       - tempo
 
@@ -108,3 +107,8 @@ volumes:
   tempo-data:
   loki-data:
   grafana-data:
+
+networks:
+  pampanginator:
+    external: true
+

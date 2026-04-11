@@ -24,10 +24,10 @@ services:
       - BACKEND=${BACKEND:-openrouter}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}
-      - VOCABULARY_SERVICE_URL=${VOCABULARY_SERVICE_URL:-http://host.docker.internal:8001}
-      - GRAMMAR_SERVICE_URL=${GRAMMAR_SERVICE_URL:-http://host.docker.internal:8002}
+      - VOCABULARY_SERVICE_URL=${VOCABULARY_SERVICE_URL:-http://mcp-vocabulary:8001}
+      - GRAMMAR_SERVICE_URL=${GRAMMAR_SERVICE_URL:-http://mcp-grammar:8002}
       - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD:-kapampangan_dev}@app-postgres:5432/kapampangan
-      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4318}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
       - OTEL_SERVICE_NAME=kapampangan-app
       - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=health
       - ENVIRONMENT=development
@@ -36,13 +36,15 @@ services:
       - .:/app
       - ./config:/app/config
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - default
+      - pampanginator
     depends_on:
       app-postgres:
         condition: service_healthy
 
   frontend:
     image: node:20-alpine
-    profiles: ["frontend"]
     working_dir: /app
     volumes:
       - ./frontend:/app
@@ -51,10 +53,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - BACKEND=${BACKEND:-openrouter}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - OPENROUTER_MODEL_A=${OPENROUTER_MODEL_A:-anthropic/claude-sonnet-4-6}
-      - OPENROUTER_MODEL_B=${OPENROUTER_MODEL_B:-meta-llama/llama-3.1-8b-instruct}
+      - API_PROXY_TARGET=http://app:8000
     depends_on:
       - app
 
@@ -78,3 +77,7 @@ services:
 volumes:
   app-postgres-dev-data:
   frontend-node-modules:
+
+networks:
+  pampanginator:
+    external: true

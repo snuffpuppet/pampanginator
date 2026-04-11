@@ -10,8 +10,10 @@ The LLM backend is configurable — all models are accessed via OpenRouter, givi
 
 ```
 User browser
+    ↓ dev: http://localhost:5173 (Vite dev server, HMR)
+    ↓ prod: http://localhost:8000 (FastAPI serves compiled SPA + API)
     ↓
-app (port 8000)               Orchestration API + built React frontend
+app (port 8000)               Orchestration API  [+ compiled React SPA in prod]
     ├── mcp-vocabulary  (port 8001)    Vocabulary MCP server (pgvector semantic search)
     └── grammar (port 8002)   Grammar graph MCP server (pgvector + graph traversal)
 
@@ -78,21 +80,22 @@ The model and backend are configured in `app/config/llm.yaml`. The `OPENROUTER_M
 docker compose up
 ```
 
-Docker Compose automatically merges `docker-compose.yml` with `docker-compose.override.yml`. The override adds a `frontend` container running the Vite dev server with HMR, and mounts all service source directories so Python changes reload without a rebuild.
+Starts three containers: the FastAPI app on `:8000` (source volume-mounted, `--reload`), the Vite dev server on `:5173` (HMR), and app-postgres. The Vite server proxies all `/api/*` requests to FastAPI.
 
-Open `http://localhost:5173`.
+**Open `http://localhost:5173`** to use the app.
 
-> **Note:** After adding new Python dependencies to `requirements.txt`, run `docker compose build <service>` to reinstall them — the dev server hot-reload picks up code changes but not new packages.
+> **Note:** After adding new Python dependencies to `requirements.txt`, run `docker compose build app` to reinstall them — hot-reload picks up code changes but not new packages.
 
 ### Prod mode (container rebuild)
 
 ```bash
-docker compose -f docker-compose.yml up
+docker compose up          # from repo root, or:
+docker compose up          # from app/ after: docker compose build app
 ```
 
-Passing `-f` explicitly skips the override file. The app image is built using a multi-stage Dockerfile: a Node.js stage compiles the React frontend, the output is copied into the Python runtime stage. No local Node.js required.
+The app `Dockerfile` uses a multi-stage build: a Node.js stage compiles the React frontend, the compiled output is copied into the Python runtime stage. FastAPI serves the SPA as static files alongside the API. No local Node.js required.
 
-Open `http://localhost:8000`.
+**Open `http://localhost:8000`** — everything is served from this single port.
 
 ### Seeding
 
@@ -174,6 +177,9 @@ Each of `mcp-vocabulary/` and `grammar/` has an equivalent test setup under thei
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/chat` | Stream a chat response (SSE) |
+| `POST` | `/api/chat/model-a` | Stream using model A (primary model from llm.yaml) |
+| `POST` | `/api/chat/model-b` | Stream using model B (comparison model from llm.yaml) |
+| `GET` | `/api/status` | Active backend, model names, and API key presence |
 | `GET` | `/api/vocabulary/search` | Semantic vocabulary search |
 | `POST` | `/api/vocabulary` | Add a vocabulary entry |
 | `POST` | `/api/feedback` | Submit thumbs-up or thumbs-down feedback |
@@ -367,7 +373,7 @@ app/                     Orchestration service + React frontend
   db/
     init.sql             PostgreSQL schema (interactions, feedback, pending_contributions)
   frontend/              React SPA
-    vite.config.ts       Dev server + Compare page LLM middleware
+    vite.config.ts       Dev server config — proxies /api to :8000
     src/
       components/        Chat, Translate, Grammar, Vocabulary, Compare, Admin, ...
       services/api.ts    All fetch() calls — one file
@@ -382,7 +388,7 @@ app/                     Orchestration service + React frontend
     interactions.py      Interaction logging
     knowledge.py         Knowledge sharing service
   routes/
-    chat.py              POST /api/chat
+    chat.py              POST /api/chat, /api/chat/model-a, /api/chat/model-b, GET /api/status
     feedback.py          Feedback CRUD and review endpoints
     vocab.py             Vocabulary search and add proxy
     export.py            Training data export (SFT/DPO JSONL)
@@ -432,8 +438,7 @@ grammar/                 Grammar graph MCP server
   Dockerfile
   Dockerfile.test
 
-docker-compose.yml       Production service definitions
-docker-compose.override.yml  Dev overrides (Vite dev server, source mounts, hot reload)
+docker-compose.yml       Full dev stack (includes all three services + observability)
 docker-compose.test.yml  Test runner definitions (all three suites)
 Makefile                 test, test-vocab, test-grammar, test-all, up, down, build
 ```

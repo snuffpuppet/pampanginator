@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 
 from fastapi import APIRouter
@@ -97,3 +98,50 @@ async def chat(request: ChatRequest):
 async def clear_session(session_id: str):
     """No-op kept for API compatibility — history is owned by the frontend."""
     return {"session_id": session_id, "cleared": True}
+
+
+@router.get("/status", summary="Backend configuration status")
+async def status():
+    """Returns the active backend and model names for display in the UI."""
+    return {
+        "backend": llm.ACTIVE_BACKEND,
+        "modelA": llm.ACTIVE_MODEL,
+        "modelB": llm.ACTIVE_MODEL_B,
+        "hasOpenRouterKey": bool(os.getenv("OPENROUTER_API_KEY", "")),
+    }
+
+
+@router.post("/chat/model-a", summary="Chat using model A")
+async def chat_model_a(request: ChatRequest):
+    """Stream a response using the primary model (ACTIVE_MODEL from llm.yaml)."""
+    return await _chat_with_model(request, llm.ACTIVE_MODEL)
+
+
+@router.post("/chat/model-b", summary="Chat using model B")
+async def chat_model_b(request: ChatRequest):
+    """Stream a response using the comparison model (model_b from llm.yaml)."""
+    return await _chat_with_model(request, llm.ACTIVE_MODEL_B)
+
+
+async def _chat_with_model(request: ChatRequest, model: str):
+    session_id = request.session_id or str(uuid.uuid4())
+    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    ctx = otel_context.get_current()
+
+    async def stream():
+        with tracer.start_as_current_span("chat.stream", context=ctx):
+            try:
+                response_text, _ = await llm.complete_with_model(
+                    messages, model=model, session_id=session_id
+                )
+                yield f"data: {json.dumps({'text': response_text})}\n\n"
+            except Exception as e:
+                LLM_ERRORS_TOTAL.labels(
+                    backend=llm.ACTIVE_BACKEND,
+                    model=model,
+                ).inc()
+                yield f"data: {json.dumps({'text': f'Error: {e}'})}\n\n"
+            finally:
+                yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")

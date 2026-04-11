@@ -3,13 +3,10 @@ TEST_COMPOSE := docker compose -f ../docker-compose.test.yml --env-file /dev/nul
 
 .PHONY: up up-frontend down logs test test-fast test-build shell
 
-## Start app + app-postgres (standalone dev)
-up:
-	$(COMPOSE) up -d
-
 ## Start app + app-postgres + Vite dev server on :5173
-up-frontend:
-	$(COMPOSE) --profile frontend up -d
+up:
+	docker network create pampanginator 2>/dev/null || true
+	$(COMPOSE) up -d
 
 ## Stop the service
 down:

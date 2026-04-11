@@ -5,7 +5,7 @@ TEST_COMPOSE      := docker compose -f docker-compose.test.yml --env-file /dev/n
 TEST_COMPOSE_VOCAB   := docker compose -f mcp-vocabulary/docker-compose.yml --env-file /dev/null -p pampanginator-mcp-vocabulary-test
 TEST_COMPOSE_GRAMMAR := docker compose -f mcp-grammar/docker-compose.test.yml --env-file /dev/null -p pampanginator-grammar-test
 
-.PHONY: test test-fast test-build test-vocab test-grammar test-all up down build frontend \
+.PHONY: test test-fast test-build test-vocab test-grammar test-all up down build \
         up-app up-vocab up-grammar down-app down-vocab down-grammar \
         logs-app logs-vocab logs-grammar
 
@@ -35,19 +35,24 @@ test-all:
 	$(TEST_COMPOSE_VOCAB) run --rm test-mcp-vocabulary
 	$(TEST_COMPOSE_GRAMMAR) run --rm test-mcp-grammar
 
-## Start the full dev stack
+## Start the full dev stack — sub-projects first, then observability.
+## All services join the 'pampanginator' Docker network and reach each other by name.
+## Each sub-project can also be started standalone with 'make up' inside its directory.
 up:
+	docker network create pampanginator 2>/dev/null || true
+	$(MAKE) -C app up
+	$(MAKE) -C mcp-vocabulary up
+	$(MAKE) -C mcp-grammar up
 	$(COMPOSE) up -d
 
-## Start the full dev stack including the Vite frontend dev server (:5173)
-frontend:
-	$(COMPOSE) --profile frontend up -d
-
-## Stop the dev stack
+## Stop the dev stack — observability first, then sub-projects
 down:
 	$(COMPOSE) down
+	$(MAKE) -C app down
+	$(MAKE) -C mcp-vocabulary down
+	$(MAKE) -C mcp-grammar down
 
-## Build the full dev stack
+## Build observability images (sub-project images build automatically on 'make up')
 build:
 	$(COMPOSE) build
 

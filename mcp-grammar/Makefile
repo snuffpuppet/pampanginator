@@ -5,6 +5,7 @@ TEST_COMPOSE := docker compose -f docker-compose.test.yml --env-file /dev/null -
 
 ## Start the mcp-grammar service + grammar-postgres (standalone dev)
 up:
+	docker network create pampanginator 2>/dev/null || true
 	$(COMPOSE) up -d
 
 ## Stop the service

@@ -20,13 +20,14 @@ Schema: app/db/init.sql
 ## Running this service
 
 ### Standalone (from app/)
-    make up              # app API + app-postgres
-    make up-frontend     # + Vite dev server on :5173
+    make up              # app API + app-postgres + Vite dev server on :5173
     make down
     make logs
     make shell           # bash in running container
 
-Ports: app API :8000, Vite frontend :5173, app-postgres :5432
+Dev entry point: http://localhost:5173 (Vite, with HMR — proxies /api/* to :8000)
+API only: http://localhost:8000 (FastAPI — no frontend served in dev)
+app-postgres: :5432
 
 MCP services are optional when running standalone — vocabulary/grammar calls
 will fail until those services are up. To connect to them start each
@@ -36,7 +37,6 @@ independently (they bind to host ports 8001 and 8002):
 
 ### Full stack (from repo root)
     make up              # all services — delegates to each sub-project's docker-compose.yml
-    make frontend        # same + Vite dev server on :5173
     make up-app          # only this service (delegates to app/Makefile)
 
 ### Environment

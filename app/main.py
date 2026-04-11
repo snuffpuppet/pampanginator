@@ -65,7 +65,9 @@ app.include_router(export.router, prefix="/api")
 app.include_router(admin_knowledge.router, prefix="/api")
 app.include_router(health.router)
 
-# Serve the React build as static files if present
+# Serve the React build as static files if present.
+# Check for the compiled assets/ directory — absent in dev (source tree is mounted),
+# present only after a production build.
 frontend_path = Path("/app/frontend")
-if frontend_path.exists():
+if (frontend_path / "assets").exists():
     app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")

@@ -38,6 +38,7 @@ _system_prompt: str | None = None
 # Set during init(); used by routes for metric labels and interaction logging.
 ACTIVE_BACKEND: str = ""
 ACTIVE_MODEL: str = ""
+ACTIVE_MODEL_B: str = ""  # comparison model for /api/chat/model-b
 SYSTEM_PROMPT_VERSION: str = ""  # first 8 hex chars of SHA-256 of the system prompt
 
 
@@ -46,7 +47,7 @@ def init(
     system_prompt_path: str = SYSTEM_PROMPT_PATH,
 ) -> None:
     """Read llm.yaml, select the active backend, apply env var overrides."""
-    global _backend, _system_prompt, ACTIVE_BACKEND, ACTIVE_MODEL, SYSTEM_PROMPT_VERSION
+    global _backend, _system_prompt, ACTIVE_BACKEND, ACTIVE_MODEL, ACTIVE_MODEL_B, SYSTEM_PROMPT_VERSION
 
     with open(llm_config_path) as f:
         config = yaml.safe_load(f)
@@ -65,6 +66,7 @@ def init(
     _system_prompt = Path(system_prompt_path).read_text(encoding="utf-8")
     ACTIVE_BACKEND = active
     ACTIVE_MODEL = _backend["model"]
+    ACTIVE_MODEL_B = _backend.get("model_b", ACTIVE_MODEL)
     SYSTEM_PROMPT_VERSION = hashlib.sha256(_system_prompt.encode()).hexdigest()[:8]
 
 
@@ -77,6 +79,14 @@ async def complete(messages: list[dict], session_id: str = "") -> tuple[str, lis
     """
     tools_enabled = _backend.get("tools_enabled", False)
     return await _complete_openai_compatible(messages, session_id, tools_enabled)
+
+
+async def complete_with_model(
+    messages: list[dict], model: str, session_id: str = ""
+) -> tuple[str, list[str]]:
+    """Complete using an explicit model override (used by comparison endpoints)."""
+    tools_enabled = _backend.get("tools_enabled", False)
+    return await _complete_openai_compatible(messages, session_id, tools_enabled, model_override=model)
 
 
 def _try_parse_text_tool_call(content: str) -> tuple[str, dict] | None:
@@ -127,9 +137,9 @@ def _try_parse_text_tool_call(content: str) -> tuple[str, dict] | None:
 
 
 async def _complete_openai_compatible(
-    messages: list[dict], session_id: str, tools_enabled: bool
+    messages: list[dict], session_id: str, tools_enabled: bool, model_override: str | None = None
 ) -> tuple[str, list[str]]:
-    model = _backend["model"]
+    model = model_override or _backend["model"]
     base_url = _backend["base_url"]
     max_tokens = _backend.get("max_tokens", 1024)
     tool_defs = get_tool_definitions(format="openai") if tools_enabled else []

@@ -248,9 +248,9 @@ The `/admin` route is password-gated via `VITE_ADMIN_PASSWORD`. Four tabs: Revie
 
 ### Decision 19 — Two-mode operation: live reload in dev, container rebuild in prod
 
-**Dev mode** (`docker compose up`) — Docker Compose merges `docker-compose.yml` with `docker-compose.override.yml`. The override adds a Vite dev server with HMR and volume-mounts all service source directories so Python changes reload without rebuild.
+**Dev mode** (`docker compose up` from `app/`) — Starts FastAPI on `:8000` (source volume-mounted, `--reload`) and a Vite dev server on `:5173`. Browse the app at `:5173`; Vite proxies all `/api/*` requests to FastAPI at `:8000`. HMR works for the frontend; Python changes reload without rebuild. FastAPI serves no static files in dev — `:8000` is API-only.
 
-**Prod mode** (`docker compose -f docker-compose.yml up`) — passing `-f` explicitly skips the override. The app Dockerfile uses a multi-stage build: Node.js compiles the frontend, the output is copied into the Python runtime stage. No local Node.js required on the host.
+**Prod mode** — The app `Dockerfile` uses a multi-stage build: Node.js compiles the frontend into `assets/`, the output is copied into the Python runtime stage at `/app/frontend`. FastAPI's `StaticFiles` mount activates when `assets/` is present, serving the full SPA from `:8000`. No separate frontend server required.
 
 ---
 

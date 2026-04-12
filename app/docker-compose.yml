@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Isolated local dev for the app service only.
 # Brings up app + app-postgres. MCP services are not started — the app starts
 # without them; vocabulary/grammar calls will fail until those services are running.

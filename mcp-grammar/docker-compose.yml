@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Isolated local dev for the mcp-grammar service only.
 # Brings up mcp-grammar + grammar-postgres. No other services are started.
 #

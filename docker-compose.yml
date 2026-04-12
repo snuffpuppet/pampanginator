@@ -11,8 +11,6 @@
 #   make up-vocab        # vocab service only
 #   make up-grammar      # grammar service only
 
-version: "3.9"
-
 services:
 
   otel-collector:

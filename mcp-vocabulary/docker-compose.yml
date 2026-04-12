@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Isolated local dev for the mcp-vocabulary service only.
 # Brings up mcp-vocabulary + vocab-postgres. No other services are started.
 #

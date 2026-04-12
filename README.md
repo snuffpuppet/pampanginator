@@ -14,8 +14,13 @@ User browser
     ↓ prod: http://localhost:8000 (FastAPI serves compiled SPA + API)
     ↓
 app (port 8000)               Orchestration API  [+ compiled React SPA in prod]
-    ├── mcp-vocabulary  (port 8001)    Vocabulary MCP server (pgvector semantic search)
-    └── mcp-grammar     (port 8002)    Grammar graph MCP server (pgvector + graph traversal)
+    │
+    └── tyk-gateway (port 8080)       API gateway — single ingress for all MCP services
+            ├── mcp-vocabulary  (port 8001)    Vocabulary MCP server (pgvector semantic search)
+            └── mcp-grammar     (port 8002)    Grammar graph MCP server (pgvector + graph traversal)
+
+Developer tooling
+    └── scalar (port 3500)            Interactive API catalog — all MCP APIs with try-it-out
 
 Databases (each service owns its own — no sharing)
     ├── app-postgres     (port 5432)   interactions, feedback, pending_contributions
@@ -80,9 +85,11 @@ The model and backend are configured in `app/config/llm.yaml`. The `OPENROUTER_M
 make up
 ```
 
-This creates a `pampanginator` Docker bridge network (if it doesn't exist), starts all three services and their databases, then starts the observability stack. All services discover each other by name on that network.
+This creates a `pampanginator` Docker bridge network (if it doesn't exist), starts all three services and their databases, then starts the API gateway and observability stack. All services discover each other by name on that network.
 
 **Open `http://localhost:5173`** — the Vite dev server with HMR. All `/api/*` requests are proxied to FastAPI on `:8000`.
+
+**Open `http://localhost:3500`** — the Scalar API catalog. Browse every published MCP API with full request/response schemas and interactive try-it-out that routes through the gateway.
 
 On first boot, `mcp-vocabulary` and `mcp-grammar` detect empty databases and seed automatically from their canonical data files. No manual seeding step is required.
 
@@ -183,6 +190,26 @@ Each of `mcp-vocabulary/` and `mcp-grammar/` has an equivalent test setup under 
 
 ## API Endpoints
 
+### API gateway (port 8080)
+
+All MCP service traffic in the full stack routes through Tyk Gateway. Each service is mounted under a path prefix; the gateway strips the prefix before forwarding.
+
+| Prefix | Forwards to | Service |
+|---|---|---|
+| `/vocab/*` | `mcp-vocabulary:8001` | Vocabulary MCP |
+| `/gram/*` | `mcp-grammar:8002` | Grammar MCP *(when added)* |
+
+Example: `GET http://localhost:8080/vocab/status` → proxied to `mcp-vocabulary:8001/status`.
+
+The full API spec for each service is available at:
+- `http://localhost:8080/vocab/openapi.json` — Vocabulary MCP OpenAPI spec
+
+**Browse and try all APIs interactively at `http://localhost:3500`** (Scalar portal).
+
+MCP services also remain directly accessible on their own ports for standalone development (`http://localhost:8001`, `http://localhost:8002`).
+
+---
+
 ### Orchestration app (port 8000)
 
 | Method | Path | Description |
@@ -209,16 +236,22 @@ Each of `mcp-vocabulary/` and `mcp-grammar/` has an equivalent test setup under 
 | `GET` | `/metrics` | Prometheus metrics (OpenMetrics format) |
 | `GET` | `/docs` | Swagger UI |
 
-### Vocab server (port 8001)
+### Vocab server — via gateway (port 8080) or direct (port 8001)
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/lookup` | Semantic search for vocabulary entries |
-| `POST` | `/vocabulary` | Add a vocabulary entry |
-| `GET` | `/status` | Service health and entry count |
-| `GET` | `/docs` | Swagger UI |
+| Method | Gateway path | Direct path | Description |
+|---|---|---|---|
+| `POST` | `/vocab/lookup` | `/lookup` | Semantic search for vocabulary entries |
+| `GET` | `/vocab/lookup` | `/lookup` | Semantic search (GET with `?q=`) |
+| `GET` | `/vocab/lookup/{term}` | `/lookup/{term}` | Semantic search by URL path |
+| `POST` | `/vocab/vocabulary` | `/vocabulary` | Add a vocabulary entry |
+| `GET` | `/vocab/status` | `/status` | Service health and entry count |
+| `POST` | `/vocab/admin/reseed` | `/admin/reseed` | Force reseed from canonical data |
+| `GET` | `/vocab/admin/stats` | `/admin/stats` | Seeded and local-addition counts |
+| `GET` | `/vocab/admin/export` | `/admin/export` | Export locally added entries |
+| `GET` | `/vocab/openapi.json` | `/openapi.json` | OpenAPI spec (served verbatim from `api/openapi.yaml`) |
+| `GET` | — | `/docs` | Swagger UI (direct only) |
 
-### Grammar server (port 8002)
+### Grammar server — direct (port 8002)
 
 | Method | Path | Description |
 |---|---|---|
@@ -450,7 +483,24 @@ mcp-grammar/             Grammar graph MCP server
   Dockerfile.test
   Makefile               up, down, logs, test, test-fast, test-build, shell
 
+gateway/                 API gateway + developer portal
+  docker-compose.yml     tyk-gateway, tyk-redis, scalar
+  Makefile               up, down, generate, check-generated
+  tyk/
+    tyk.conf             Tyk Gateway runtime config (mounted, not baked in)
+  apis/                  GENERATED — Tyk Classic API definitions (one per MCP service)
+    mcp-vocabulary.json
+    .spec-hash           SHA-256 drift gate — must match mcp-vocabulary/api/openapi.yaml
+  portal/
+    catalog.json         GENERATED — Scalar multi-spec catalog config
+  policies/
+    policies.json        Rate limits and access policies
+  scripts/
+    build_apis.py        Generates apis/*.json + portal/catalog.json from openapi.yaml files
+  tests/
+    test_drift.py        Fails if openapi.yaml changed since last `make generate`
+
 docker-compose.yml       Observability stack; root Makefile delegates sub-projects then starts this
 docker-compose.test.yml  Test runner definitions (all three suites)
-Makefile                 test, test-vocab, test-grammar, test-all, up, down, build
+Makefile                 test, test-vocab, test-grammar, test-all, up, down, up-gateway, down-gateway
 ```

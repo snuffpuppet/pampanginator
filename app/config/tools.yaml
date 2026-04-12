@@ -10,7 +10,7 @@ tools:
       Pass the Kapampangan word directly (e.g. 'mangan') or an English concept
       (e.g. 'eat', 'write'). Do NOT use this for grammar rules, verb conjugation
       patterns, or sentence structure — use grammar_lookup for those.
-    endpoint: http://mcp-vocabulary:8001/lookup
+    endpoint: http://tyk-gateway:8080/vocab/lookup
     method: POST
     timeout_seconds: 10
     parameters:

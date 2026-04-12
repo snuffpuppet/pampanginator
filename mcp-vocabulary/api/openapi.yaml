@@ -1,0 +1,425 @@
+openapi: "3.1.0"
+info:
+  title: Kapampangan Vocabulary MCP
+  description: |
+    Vocabulary lookup service for the Kapampangan language tutor.
+    Uses pgvector cosine similarity search against a PostgreSQL vocabulary
+    table populated from canonical data files.
+
+    Called by the orchestration layer's agentic tool loop.
+    Can also be queried directly here for manual testing.
+  version: "0.2.0"
+
+servers:
+  - url: http://localhost:8080/vocab
+    description: Development (via gateway — run `make up` from monorepo root)
+  - url: http://localhost:8001
+    description: Direct (standalone — run `make up` from mcp-vocabulary/)
+
+tags:
+  - name: lookup
+    description: Vocabulary search endpoints
+  - name: vocabulary
+    description: Vocabulary management endpoints
+  - name: status
+    description: Service health and index stats
+  - name: admin
+    description: Administrative operations
+
+paths:
+
+  /lookup:
+    post:
+      operationId: lookup_post
+      summary: Semantic vocabulary lookup (POST) — used by orchestration tool router
+      description: |
+        Semantic search via pgvector. Accepts {term, type, limit} JSON body.
+        Same contract as the previous JSON-index implementation so tools.yaml
+        does not need to change.
+      tags: [lookup]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LookupRequest'
+      responses:
+        "200":
+          description: Matching vocabulary entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupResponse'
+        "404":
+          description: No entries found for the given term
+
+    get:
+      operationId: lookup_get
+      summary: Semantic vocabulary search (GET) — for the frontend
+      description: |
+        Embed q and return the closest vocabulary entries by cosine similarity.
+        Includes similarity_score on each result so the frontend can distinguish
+        exact-ish matches from near-misses.
+      tags: [lookup]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query — Kapampangan word or English concept
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 5
+        - name: max_authority_level
+          in: query
+          required: false
+          description: Only return entries at or below this authority level
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 4
+            default: 4
+      responses:
+        "200":
+          description: Search results with similarity scores
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VocabularySearchResponse'
+
+  /lookup/{term}:
+    get:
+      operationId: lookup_term_get
+      summary: Semantic vocabulary lookup by URL path (GET)
+      tags: [lookup]
+      parameters:
+        - name: term
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 6
+      responses:
+        "200":
+          description: Matching vocabulary entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupResponse'
+        "404":
+          description: No entries found for the given term
+
+  /vocabulary:
+    post:
+      operationId: vocabulary_post
+      summary: Add a vocabulary entry
+      description: |
+        Insert a new vocabulary entry. Generates the embedding immediately so the
+        entry is searchable without a restart. If source is native_speaker and
+        authority_level is not explicitly set, authority_level defaults to 1.
+      tags: [vocabulary]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddVocabularyRequest'
+            examples:
+              mangan:
+                value:
+                  term: mangan
+                  meaning: to eat
+                  part_of_speech: verb
+                  aspect_forms:
+                    progressive: mangan
+                    completed: mengan
+                    contemplated: mamangan
+                  examples:
+                    - kapampangan: "Mangan ta na!"
+                      english: "Let's eat!"
+                  source: native_speaker
+                  authority_level: 1
+      responses:
+        "201":
+          description: Entry created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VocabularyEntry'
+        "500":
+          description: Internal error inserting entry
+
+  /status:
+    get:
+      operationId: status_get
+      summary: Index stats and liveness
+      tags: [status]
+      responses:
+        "200":
+          description: Service status and entry count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /admin/reseed:
+    post:
+      operationId: admin_reseed_post
+      summary: Force a full reseed from canonical data
+      description: Truncates and reseeds the vocabulary table from data/vocabulary.json.
+      tags: [admin]
+      responses:
+        "200":
+          description: Reseed complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReseedResponse'
+
+  /admin/stats:
+    get:
+      operationId: admin_stats_get
+      summary: Seeded and local-addition counts
+      description: Returns seeded and local-addition counts for the orchestration app's sync status view.
+      tags: [admin]
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatsResponse'
+
+  /admin/export:
+    get:
+      operationId: admin_export_get
+      summary: Export locally added vocabulary entries
+      description: Exports vocabulary entries that were added locally (seeded_from_canonical = FALSE).
+      tags: [admin]
+      parameters:
+        - name: min_authority_level
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 4
+            default: 1
+        - name: since
+          in: query
+          required: false
+          description: ISO date — only entries added after this date
+          schema:
+            type: string
+            format: date
+            nullable: true
+      responses:
+        "200":
+          description: Exported vocabulary entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminExportResponse'
+
+components:
+  schemas:
+
+    VocabularyEntry:
+      type: object
+      required: [term, meaning]
+      properties:
+        id:
+          type: string
+          nullable: true
+        term:
+          type: string
+          description: Kapampangan word or phrase
+        meaning:
+          type: string
+          description: English meaning
+        part_of_speech:
+          type: string
+          nullable: true
+          description: "verb | noun | adjective | phrase"
+        aspect_forms:
+          type: object
+          nullable: true
+          description: 'For verbs: {"progressive": "...", "completed": "...", "contemplated": "..."}'
+          additionalProperties:
+            type: string
+        examples:
+          type: array
+          nullable: true
+          description: '[{"kapampangan": "...", "english": "..."}]'
+          items:
+            type: object
+            additionalProperties: true
+        usage_notes:
+          type: string
+          nullable: true
+        authority_level:
+          type: integer
+          minimum: 1
+          maximum: 4
+          default: 3
+          description: "1=native speaker verified, 2=academic, 3=community, 4=LLM inferred"
+        source:
+          type: string
+          nullable: true
+          description: "native_speaker | reference | inferred"
+        verified_by:
+          type: string
+          nullable: true
+        verified_date:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    VocabularySearchResult:
+      allOf:
+        - $ref: '#/components/schemas/VocabularyEntry'
+        - type: object
+          required: [similarity_score]
+          properties:
+            similarity_score:
+              type: number
+              format: float
+              description: Cosine similarity score (0–1, higher = closer match)
+
+    VocabularySearchResponse:
+      type: object
+      required: [query, count, results]
+      properties:
+        query:
+          type: string
+        count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/VocabularySearchResult'
+
+    LookupRequest:
+      type: object
+      required: [term]
+      properties:
+        term:
+          type: string
+          description: Kapampangan word or English concept to look up
+          examples: [mangan, eat, sulat]
+        type:
+          type: string
+          nullable: true
+          description: "word | phrase | verb | noun | adjective"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 6
+          description: Maximum entries to return
+
+    LookupResponse:
+      type: object
+      required: [term, count, entries]
+      properties:
+        term:
+          type: string
+        count:
+          type: integer
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/VocabularySearchResult'
+
+    AddVocabularyRequest:
+      type: object
+      required: [term, meaning]
+      properties:
+        term:
+          type: string
+          description: Kapampangan word or phrase
+        meaning:
+          type: string
+          description: English meaning
+        part_of_speech:
+          type: string
+          nullable: true
+          description: "verb | noun | adjective | phrase"
+        aspect_forms:
+          type: object
+          nullable: true
+          description: 'For verbs: {"progressive": "...", "completed": "...", "contemplated": "..."}'
+          additionalProperties:
+            type: string
+        examples:
+          type: array
+          nullable: true
+          description: '[{"kapampangan": "...", "english": "..."}]'
+          items:
+            type: object
+            additionalProperties: true
+        usage_notes:
+          type: string
+          nullable: true
+        source:
+          type: string
+          nullable: true
+          description: "native_speaker | reference | inferred"
+        authority_level:
+          type: integer
+          minimum: 1
+          maximum: 4
+          default: 3
+          description: "1=native speaker verified, 2=academic, 3=community, 4=LLM inferred"
+
+    StatusResponse:
+      type: object
+      required: [entries, status]
+      properties:
+        entries:
+          type: integer
+        status:
+          type: string
+
+    ReseedResponse:
+      type: object
+      required: [reseeded]
+      properties:
+        reseeded:
+          type: integer
+
+    AdminStatsResponse:
+      type: object
+      required: [seeded_count, local_additions]
+      properties:
+        last_seeded:
+          type: string
+          nullable: true
+        seeded_count:
+          type: integer
+        local_additions:
+          type: integer
+
+    AdminExportResponse:
+      type: object
+      required: [vocabulary]
+      properties:
+        vocabulary:
+          type: array
+          items:
+            $ref: '#/components/schemas/VocabularyEntry'

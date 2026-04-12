@@ -1,0 +1,22 @@
+# Codegen tooling — separate compose file, never started by `make up`.
+# Invoked exclusively via `make generate` to regenerate api/_generated/
+# from api/openapi.yaml.
+#
+# No local installation required: all tooling runs inside the container.
+# Pin the image version per Decision 21 (never use latest).
+
+services:
+  codegen:
+    image: openapitools/openapi-generator-cli:v7.10.0
+    volumes:
+      - ./api:/local/api
+    working_dir: /local
+    command:
+      - generate
+      - --input-spec
+      - /local/api/openapi.yaml
+      - --generator-name
+      - python-fastapi
+      - --output
+      - /local/api/_generated
+      - --additional-properties=sourceFolder=.,fastapiImplementationPackage=impl,packageName=mcp_vocabulary_api

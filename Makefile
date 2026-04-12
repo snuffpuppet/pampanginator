@@ -6,7 +6,7 @@ TEST_COMPOSE_VOCAB   := docker compose -f mcp-vocabulary/docker-compose.yml --en
 TEST_COMPOSE_GRAMMAR := docker compose -f mcp-grammar/docker-compose.test.yml --env-file /dev/null -p pampanginator-grammar-test
 
 .PHONY: test test-fast test-build test-vocab test-grammar test-all up down build \
-        up-app up-vocab up-grammar down-app down-vocab down-grammar \
+        up-app up-vocab up-grammar up-gateway down-app down-vocab down-grammar down-gateway \
         logs-app logs-vocab logs-grammar
 
 ## Run the app unit-test suite inside Docker (builds image on first run)
@@ -35,20 +35,22 @@ test-all:
 	$(TEST_COMPOSE_VOCAB) run --rm test-mcp-vocabulary
 	$(TEST_COMPOSE_GRAMMAR) run --rm test-mcp-grammar
 
-## Start the full dev stack — sub-projects first, then observability.
+## Start the full dev stack — sub-projects first, then gateway, then observability.
 ## All services join the 'pampanginator' Docker network and reach each other by name.
 ## Each sub-project can also be started standalone with 'make up' inside its directory.
 up:
 	docker network create pampanginator 2>/dev/null || true
-	$(MAKE) -C app up
 	$(MAKE) -C mcp-vocabulary up
 	$(MAKE) -C mcp-grammar up
+	$(MAKE) -C gateway up
+	$(MAKE) -C app up
 	$(COMPOSE) up -d
 
 ## Stop the dev stack — observability first, then sub-projects
 down:
 	$(COMPOSE) down
 	$(MAKE) -C app down
+	$(MAKE) -C gateway down
 	$(MAKE) -C mcp-vocabulary down
 	$(MAKE) -C mcp-grammar down
 
@@ -79,6 +81,14 @@ down-vocab:
 ## Stop only the grammar service
 down-grammar:
 	$(MAKE) -C mcp-grammar down
+
+## Start only the gateway (tyk-gateway + tyk-redis + scalar)
+up-gateway:
+	$(MAKE) -C gateway up
+
+## Stop the gateway
+down-gateway:
+	$(MAKE) -C gateway down
 
 ## Follow logs for the app service
 logs-app:

@@ -60,7 +60,7 @@ Key defaults (see ../.env.example for all variables):
     make test-build  # rebuild test image after requirements change
 
 ## Architecture decisions most relevant to this service
-Decisions 3a, 4, 5, 11, 12, 14, 19
+Decisions 3a, 4, 5, 11, 12, 14, 19, 24
 Full architecture: ../ARCHITECTURE.md
 
 ## Skills

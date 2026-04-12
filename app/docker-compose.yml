@@ -22,7 +22,7 @@ services:
       - BACKEND=${BACKEND:-openrouter}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}
-      - VOCABULARY_SERVICE_URL=${VOCABULARY_SERVICE_URL:-http://mcp-vocabulary:8001}
+      - VOCABULARY_SERVICE_URL=${VOCABULARY_SERVICE_URL:-http://tyk-gateway:8080/vocab}
       - GRAMMAR_SERVICE_URL=${GRAMMAR_SERVICE_URL:-http://mcp-grammar:8002}
       - DATABASE_URL=postgresql://kapampangan:${POSTGRES_PASSWORD:-kapampangan_dev}@app-postgres:5432/kapampangan
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}

@@ -1,0 +1,60 @@
+# API Gateway + Dev Portal
+#
+# Three containers:
+#   tyk-gateway — reverse-proxy ingress for all MCP services    :8080
+#   tyk-redis   — Tyk state store (internal only)
+#   scalar      — Interactive API catalog (Scalar API Reference)  :3500
+#
+# Start standalone:        cd gateway && make up
+# Start via full stack:    make up   (from monorepo root)
+#
+# Prerequisites: run `make generate` before first start so that
+#   gateway/apis/*.json  and  gateway/portal/catalog.json  exist.
+
+services:
+
+  tyk-gateway:
+    image: tykio/tyk-gateway:v5.3.6
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./tyk/tyk.conf:/opt/tyk-gateway/tyk.conf:ro
+      - ./apis:/opt/tyk-gateway/apps:ro
+      - ./policies/policies.json:/opt/tyk-gateway/policies/policies.json:ro
+    environment:
+      - TYK_GW_SECRET=dev-secret-change-in-production
+    depends_on:
+      tyk-redis:
+        condition: service_healthy
+    networks:
+      - gateway_default
+      - pampanginator
+    restart: unless-stopped
+
+  tyk-redis:
+    image: redis:7.2-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - gateway_default
+
+  scalar:
+    image: scalarapi/api-reference:latest
+    ports:
+      - "3500:8080"
+    volumes:
+      # Generated catalog — Scalar reads this at /configuration.json.
+      # Run `make generate` to create this file before starting.
+      - ./portal/catalog.json:/tmp/configuration.json:ro
+    networks:
+      - gateway_default
+      - pampanginator
+
+networks:
+  pampanginator:
+    external: true
+  gateway_default:
+    driver: bridge

@@ -1,0 +1,644 @@
+openapi: 3.1.0
+info:
+  description: |
+    Vocabulary lookup service for the Kapampangan language tutor.
+    Uses pgvector cosine similarity search against a PostgreSQL vocabulary
+    table populated from canonical data files.
+
+    Called by the orchestration layer's agentic tool loop.
+    Can also be queried directly here for manual testing.
+  title: Kapampangan Vocabulary MCP
+  version: 0.2.0
+servers:
+- description: Development (via gateway — run `make up` from monorepo root)
+  url: http://localhost:8080/vocab
+- description: Direct (standalone — run `make up` from mcp-vocabulary/)
+  url: http://localhost:8001
+tags:
+- description: Vocabulary search endpoints
+  name: lookup
+- description: Vocabulary management endpoints
+  name: vocabulary
+- description: Service health and index stats
+  name: status
+- description: Administrative operations
+  name: admin
+paths:
+  /lookup:
+    get:
+      description: |
+        Embed q and return the closest vocabulary entries by cosine similarity.
+        Includes similarity_score on each result so the frontend can distinguish
+        exact-ish matches from near-misses.
+      operationId: lookup_get
+      parameters:
+      - description: Search query — Kapampangan word or English concept
+        explode: true
+        in: query
+        name: q
+        required: true
+        schema:
+          type: string
+        style: form
+      - explode: true
+        in: query
+        name: limit
+        required: false
+        schema:
+          default: 5
+          maximum: 20
+          minimum: 1
+          type: integer
+        style: form
+      - description: Only return entries at or below this authority level
+        explode: true
+        in: query
+        name: max_authority_level
+        required: false
+        schema:
+          default: 4
+          maximum: 4
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VocabularySearchResponse'
+          description: Search results with similarity scores
+      summary: Semantic vocabulary search (GET) — for the frontend
+      tags:
+      - lookup
+    post:
+      description: |
+        Semantic search via pgvector. Accepts {term, type, limit} JSON body.
+        Same contract as the previous JSON-index implementation so tools.yaml
+        does not need to change.
+      operationId: lookup_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LookupRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupResponse'
+          description: Matching vocabulary entries
+        "404":
+          description: No entries found for the given term
+      summary: Semantic vocabulary lookup (POST) — used by orchestration tool router
+      tags:
+      - lookup
+  /lookup/{term}:
+    get:
+      operationId: lookup_term_get
+      parameters:
+      - explode: false
+        in: path
+        name: term
+        required: true
+        schema:
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: limit
+        required: false
+        schema:
+          default: 6
+          maximum: 20
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupResponse'
+          description: Matching vocabulary entries
+        "404":
+          description: No entries found for the given term
+      summary: Semantic vocabulary lookup by URL path (GET)
+      tags:
+      - lookup
+  /vocabulary:
+    post:
+      description: |
+        Insert a new vocabulary entry. Generates the embedding immediately so the
+        entry is searchable without a restart. If source is native_speaker and
+        authority_level is not explicitly set, authority_level defaults to 1.
+      operationId: vocabulary_post
+      requestBody:
+        content:
+          application/json:
+            examples:
+              mangan:
+                value:
+                  term: mangan
+                  meaning: to eat
+                  part_of_speech: verb
+                  aspect_forms:
+                    progressive: mangan
+                    completed: mengan
+                    contemplated: mamangan
+                  examples:
+                  - kapampangan: Mangan ta na!
+                    english: Let's eat!
+                  source: native_speaker
+                  authority_level: 1
+            schema:
+              $ref: '#/components/schemas/AddVocabularyRequest'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VocabularyEntry'
+          description: Entry created
+        "500":
+          description: Internal error inserting entry
+      summary: Add a vocabulary entry
+      tags:
+      - vocabulary
+  /status:
+    get:
+      operationId: status_get
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+          description: Service status and entry count
+      summary: Index stats and liveness
+      tags:
+      - status
+  /admin/reseed:
+    post:
+      description: Truncates and reseeds the vocabulary table from data/vocabulary.json.
+      operationId: admin_reseed_post
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReseedResponse'
+          description: Reseed complete
+      summary: Force a full reseed from canonical data
+      tags:
+      - admin
+  /admin/stats:
+    get:
+      description: Returns seeded and local-addition counts for the orchestration
+        app's sync status view.
+      operationId: admin_stats_get
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatsResponse'
+          description: Stats
+      summary: Seeded and local-addition counts
+      tags:
+      - admin
+  /admin/export:
+    get:
+      description: Exports vocabulary entries that were added locally (seeded_from_canonical
+        = FALSE).
+      operationId: admin_export_get
+      parameters:
+      - explode: true
+        in: query
+        name: min_authority_level
+        required: false
+        schema:
+          default: 1
+          maximum: 4
+          minimum: 1
+          type: integer
+        style: form
+      - description: ISO date — only entries added after this date
+        explode: true
+        in: query
+        name: since
+        required: false
+        schema:
+          format: date
+          type: string
+          nullable: true
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminExportResponse'
+          description: Exported vocabulary entries
+      summary: Export locally added vocabulary entries
+      tags:
+      - admin
+components:
+  schemas:
+    VocabularyEntry:
+      example:
+        verified_date: verified_date
+        verified_by: verified_by
+        notes: notes
+        examples:
+        - key: ""
+        - key: ""
+        meaning: meaning
+        part_of_speech: part_of_speech
+        term: term
+        aspect_forms:
+          key: aspect_forms
+        authority_level: 1
+        id: id
+        source: source
+        usage_notes: usage_notes
+      properties:
+        id:
+          title: id
+          type: string
+          nullable: true
+        term:
+          description: Kapampangan word or phrase
+          title: term
+          type: string
+        meaning:
+          description: English meaning
+          title: meaning
+          type: string
+        part_of_speech:
+          description: verb | noun | adjective | phrase
+          title: part_of_speech
+          type: string
+          nullable: true
+        aspect_forms:
+          additionalProperties:
+            type: string
+          description: "For verbs: {\"progressive\": \"...\", \"completed\": \"...\"\
+            , \"contemplated\": \"...\"}"
+          title: aspect_forms
+          nullable: true
+        examples:
+          description: "[{\"kapampangan\": \"...\", \"english\": \"...\"}]"
+          items:
+            additionalProperties: true
+            type: object
+          title: examples
+          type: array
+          nullable: true
+        usage_notes:
+          title: id
+          type: string
+          nullable: true
+        authority_level:
+          default: 3
+          description: "1=native speaker verified, 2=academic, 3=community, 4=LLM\
+            \ inferred"
+          maximum: 4
+          minimum: 1
+          title: authority_level
+          type: integer
+        source:
+          description: native_speaker | reference | inferred
+          title: source
+          type: string
+          nullable: true
+        verified_by:
+          title: id
+          type: string
+          nullable: true
+        verified_date:
+          title: id
+          type: string
+          nullable: true
+        notes:
+          title: id
+          type: string
+          nullable: true
+      required:
+      - meaning
+      - term
+      title: VocabularyEntry
+    VocabularySearchResult:
+      allOf:
+      - $ref: '#/components/schemas/VocabularyEntry'
+      - properties:
+          similarity_score:
+            description: "Cosine similarity score (0–1, higher = closer match)"
+            format: float
+            type: number
+        required:
+        - similarity_score
+      example:
+        notes: notes
+        part_of_speech: part_of_speech
+        aspect_forms:
+          key: aspect_forms
+        source: source
+        verified_date: verified_date
+        verified_by: verified_by
+        examples:
+        - key: ""
+        - key: ""
+        meaning: meaning
+        term: term
+        authority_level: 2
+        id: id
+        usage_notes: usage_notes
+        similarity_score: 1.4658129
+      title: VocabularySearchResult
+    VocabularySearchResponse:
+      example:
+        query: query
+        count: 0
+        results:
+        - notes: notes
+          part_of_speech: part_of_speech
+          aspect_forms:
+            key: aspect_forms
+          source: source
+          verified_date: verified_date
+          verified_by: verified_by
+          examples:
+          - key: ""
+          - key: ""
+          meaning: meaning
+          term: term
+          authority_level: 2
+          id: id
+          usage_notes: usage_notes
+          similarity_score: 1.4658129
+        - notes: notes
+          part_of_speech: part_of_speech
+          aspect_forms:
+            key: aspect_forms
+          source: source
+          verified_date: verified_date
+          verified_by: verified_by
+          examples:
+          - key: ""
+          - key: ""
+          meaning: meaning
+          term: term
+          authority_level: 2
+          id: id
+          usage_notes: usage_notes
+          similarity_score: 1.4658129
+      properties:
+        query:
+          title: query
+          type: string
+        count:
+          title: count
+          type: integer
+        results:
+          items:
+            $ref: '#/components/schemas/VocabularySearchResult'
+          title: results
+          type: array
+      required:
+      - count
+      - query
+      - results
+      title: VocabularySearchResponse
+    LookupRequest:
+      example:
+        limit: 2
+        term: term
+        type: type
+      properties:
+        term:
+          description: Kapampangan word or English concept to look up
+          title: term
+          type: string
+        type:
+          description: word | phrase | verb | noun | adjective
+          title: type
+          type: string
+          nullable: true
+        limit:
+          default: 6
+          description: Maximum entries to return
+          maximum: 20
+          minimum: 1
+          title: limit
+          type: integer
+      required:
+      - term
+      title: LookupRequest
+    LookupResponse:
+      example:
+        entries:
+        - notes: notes
+          part_of_speech: part_of_speech
+          aspect_forms:
+            key: aspect_forms
+          source: source
+          verified_date: verified_date
+          verified_by: verified_by
+          examples:
+          - key: ""
+          - key: ""
+          meaning: meaning
+          term: term
+          authority_level: 2
+          id: id
+          usage_notes: usage_notes
+          similarity_score: 1.4658129
+        - notes: notes
+          part_of_speech: part_of_speech
+          aspect_forms:
+            key: aspect_forms
+          source: source
+          verified_date: verified_date
+          verified_by: verified_by
+          examples:
+          - key: ""
+          - key: ""
+          meaning: meaning
+          term: term
+          authority_level: 2
+          id: id
+          usage_notes: usage_notes
+          similarity_score: 1.4658129
+        count: 0
+        term: term
+      properties:
+        term:
+          title: term
+          type: string
+        count:
+          title: count
+          type: integer
+        entries:
+          items:
+            $ref: '#/components/schemas/VocabularySearchResult'
+          title: entries
+          type: array
+      required:
+      - count
+      - entries
+      - term
+      title: LookupResponse
+    AddVocabularyRequest:
+      example:
+        examples:
+        - key: ""
+        - key: ""
+        meaning: meaning
+        part_of_speech: part_of_speech
+        term: term
+        aspect_forms:
+          key: aspect_forms
+        authority_level: 1
+        source: source
+        usage_notes: usage_notes
+      properties:
+        term:
+          description: Kapampangan word or phrase
+          title: term
+          type: string
+        meaning:
+          description: English meaning
+          title: meaning
+          type: string
+        part_of_speech:
+          description: verb | noun | adjective | phrase
+          title: part_of_speech
+          type: string
+          nullable: true
+        aspect_forms:
+          additionalProperties:
+            type: string
+          description: "For verbs: {\"progressive\": \"...\", \"completed\": \"...\"\
+            , \"contemplated\": \"...\"}"
+          title: aspect_forms
+          nullable: true
+        examples:
+          description: "[{\"kapampangan\": \"...\", \"english\": \"...\"}]"
+          items:
+            additionalProperties: true
+            type: object
+          title: examples
+          type: array
+          nullable: true
+        usage_notes:
+          title: usage_notes
+          type: string
+          nullable: true
+        source:
+          description: native_speaker | reference | inferred
+          title: source
+          type: string
+          nullable: true
+        authority_level:
+          default: 3
+          description: "1=native speaker verified, 2=academic, 3=community, 4=LLM\
+            \ inferred"
+          maximum: 4
+          minimum: 1
+          title: authority_level
+          type: integer
+      required:
+      - meaning
+      - term
+      title: AddVocabularyRequest
+    StatusResponse:
+      example:
+        entries: 0
+        status: status
+      properties:
+        entries:
+          title: entries
+          type: integer
+        status:
+          title: status
+          type: string
+      required:
+      - entries
+      - status
+      title: StatusResponse
+    ReseedResponse:
+      example:
+        reseeded: 0
+      properties:
+        reseeded:
+          title: reseeded
+          type: integer
+      required:
+      - reseeded
+      title: ReseedResponse
+    AdminStatsResponse:
+      example:
+        local_additions: 6
+        seeded_count: 0
+        last_seeded: last_seeded
+      properties:
+        last_seeded:
+          title: last_seeded
+          type: string
+          nullable: true
+        seeded_count:
+          title: seeded_count
+          type: integer
+        local_additions:
+          title: local_additions
+          type: integer
+      required:
+      - local_additions
+      - seeded_count
+      title: AdminStatsResponse
+    AdminExportResponse:
+      example:
+        vocabulary:
+        - verified_date: verified_date
+          verified_by: verified_by
+          notes: notes
+          examples:
+          - key: ""
+          - key: ""
+          meaning: meaning
+          part_of_speech: part_of_speech
+          term: term
+          aspect_forms:
+            key: aspect_forms
+          authority_level: 1
+          id: id
+          source: source
+          usage_notes: usage_notes
+        - verified_date: verified_date
+          verified_by: verified_by
+          notes: notes
+          examples:
+          - key: ""
+          - key: ""
+          meaning: meaning
+          part_of_speech: part_of_speech
+          term: term
+          aspect_forms:
+            key: aspect_forms
+          authority_level: 1
+          id: id
+          source: source
+          usage_notes: usage_notes
+      properties:
+        vocabulary:
+          items:
+            $ref: '#/components/schemas/VocabularyEntry'
+          title: vocabulary
+          type: array
+      required:
+      - vocabulary
+      title: AdminExportResponse

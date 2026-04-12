@@ -1,0 +1,10 @@
+{
+  "sources": [
+    {
+      "title": "Kapampangan Vocabulary MCP",
+      "slug": "mcp-vocabulary",
+      "url": "http://localhost:8080/vocab/openapi.json",
+      "default": true
+    }
+  ]
+}

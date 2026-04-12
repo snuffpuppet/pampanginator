@@ -1,0 +1,17 @@
+# openapi-generator-ignore
+#
+# Emit only the abstract API layer (apis/ + models/).
+# Everything else is hand-written and must not be clobbered on regen.
+
+main.py
+setup.py
+setup.cfg
+pyproject.toml
+requirements.txt
+README.md
+Dockerfile
+docker-compose.yaml
+.gitignore
+.openapi-generator-ignore
+tests/**
+impl/**

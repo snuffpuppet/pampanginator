@@ -20,8 +20,13 @@
 User browser
     ↓
 app (port 8000)               Orchestration API + built React frontend
-    ├── mcp-vocabulary  (port 8001)    Vocabulary MCP server (pgvector semantic search)
-    └── mcp-grammar     (port 8002)    Grammar graph MCP server (pgvector + graph traversal)
+    │
+    └── tyk-gateway (port 8080)       API gateway — MCP service ingress
+            ├── mcp-vocabulary  (port 8001)    Vocabulary MCP server (pgvector semantic search)
+            └── mcp-grammar     (port 8002)    Grammar graph MCP server (pgvector + graph traversal)
+
+Developer tooling
+    └── scalar (port 3500)            Interactive API catalog — browse and try-it-out all MCP APIs
 
 Databases (each service owns its own — no sharing)
     ├── app-postgres     (port 5432)   interactions, feedback, pending_contributions
@@ -303,3 +308,43 @@ This mirrors how source code is managed. Contributors diverge locally, contribut
 | `shared_db` | All instances write to a shared cloud PostgreSQL; maintainer approves via admin interface |
 
 **Seeding behaviour:** vocab and grammar MCP servers check whether their tables are empty on startup. If empty, they seed from the data files. `RESEED_ON_STARTUP=true` forces a full reseed — use this after pulling updated canonical data files.
+
+---
+
+### Decision 24 — Contract-first API specification for MCP services
+
+MCP service APIs are defined contract-first: a hand-authored OpenAPI YAML in `{service}/api/openapi.yaml` is the source of truth. Server stubs (FastAPI route ABCs + Pydantic models) are generated from it; handlers subclass the generated abstract classes and implement the business logic. The service consumes the contract; it does not produce it.
+
+Reason: the API shape is read by at least three consumers — the service itself, the API gateway (Phase 2), and the dev portal — plus any generated clients. Whichever consumer authors the spec is authoritative and the others drift. Making the YAML the single upstream artifact eliminates that class of drift by construction, and extends the "declarative over imperative" and Decision 1 (config over code) principles from runtime config to the API surface itself.
+
+**Scope:** applies to MCP services with external consumers (`mcp-vocabulary`, and `mcp-grammar` when it gains external clients). `app/` remains code-first — its HTTP surface is an implementation detail of the orchestration layer, not a contract.
+
+**Mechanism:**
+
+- **Generator:** `openapitools/openapi-generator-cli` pinned to a specific tag (per Decision 21), run via a dedicated `docker-compose.codegen.yml` — no host-side installs (per Decision 6).
+- **Split:** `api/_generated/` holds regeneratable abstract-base classes and Pydantic models. `api/_generated/impl/` holds hand-written subclasses that provide the business logic; `impl/*` is listed in `.openapi-generator-ignore` so regeneration never clobbers it.
+- **Drift gate:** `make generate` writes a SHA-256 of the spec to `api/_generated/.spec-hash`. A pytest check (`tests/test_generated.py`) fails if the live spec hash diverges from the recorded one, forcing the developer to regenerate and commit before CI passes. `make check-generated` provides the same gate outside the test suite.
+- **Served spec:** FastAPI's `/openapi.json` is overridden to return the authored YAML verbatim, so gateway and portal see byte-identical bytes to what the generator consumed.
+
+**Lifecycle:** edit `api/openapi.yaml` → `make generate` → implement any new abstract methods in `api/_generated/impl/` → commit all three (YAML, regenerated stubs, updated `.spec-hash`) in one PR. Adding an endpoint to the YAML without implementing it causes startup to fail with `TypeError: Can't instantiate abstract class`, surfacing the gap immediately rather than at request time.
+
+---
+
+### Decision 25 — API gateway as the single ingress for MCP services
+
+All traffic from `app/` to MCP services is routed through Tyk Gateway OSS (`:8080`). MCP services remain directly accessible on their own ports for standalone development but in full-stack mode the gateway is the canonical entry point.
+
+Reason: a single ingress point provides one place for cross-cutting concerns — CORS, rate limiting, observability, and future auth — without duplicating that logic in each service. It also makes the published API surface explicit: what the gateway routes is what consumers see.
+
+**Components:**
+- **Tyk Gateway OSS** (`tykio/tyk-gateway`, pinned tag) — the reverse-proxy. File-based API definitions in `gateway/apis/` (per Decision 6; per Decision 21).
+- **Tyk Redis** — Tyk's internal state store. Internal network only; never exposed to host.
+- **Scalar API Reference** (`scalarapi/api-reference`, pinned tag) — interactive API catalog at `:3500`. Reads each MCP service's `openapi.json` via the gateway and renders all published APIs in one sidebar with try-it-out.
+
+**Location:** all three containers live in `gateway/docker-compose.yml`, a new top-level directory following the monorepo composition rule (Decision 23). `gateway/` owns its own compose and Makefile; the root `Makefile up` target delegates to it after bringing up the MCP services.
+
+**Tyk API definitions are generated, not hand-authored** (extends Decision 24): `gateway/scripts/build_apis.py` reads each MCP service's `api/openapi.yaml` and emits a Tyk Classic API definition JSON. The same drift gate applies — `gateway/apis/.spec-hash` records the SHA-256 of each source YAML; `make check-generated` (and `tests/test_drift.py`) fail if the live spec no longer matches the recorded hash.
+
+**Auth posture (dev):** keyless. Tyk enforces no API key in the default configuration. Rate limits are set in `gateway/policies/policies.json` but not enforced per-consumer. Future hardening — API keys, OAuth, per-consumer quotas — is a policy edit, not an architecture change.
+
+**Standalone preserved:** `cd mcp-vocabulary && make up` continues to work without the gateway. The gateway routing is purely additive. `app/` falls back to direct-mode by setting `VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001`.

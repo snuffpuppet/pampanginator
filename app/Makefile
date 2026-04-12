@@ -1,7 +1,7 @@
 COMPOSE      := docker compose
 TEST_COMPOSE := docker compose -f ../docker-compose.test.yml --env-file /dev/null -p pampanginator-app-test
 
-.PHONY: up up-frontend down logs test test-fast test-build shell
+.PHONY: up up-frontend down logs build rebuild test test-fast test-build shell
 
 ## Start app + app-postgres + Vite dev server on :5173
 up:
@@ -11,6 +11,14 @@ up:
 ## Stop the service
 down:
 	$(COMPOSE) down
+
+## Build service images (incremental)
+build:
+	$(COMPOSE) build
+
+## Rebuild all service images from scratch (no cache)
+rebuild:
+	$(COMPOSE) build --no-cache
 
 ## Show logs
 logs:

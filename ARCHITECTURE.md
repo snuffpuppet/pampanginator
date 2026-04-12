@@ -46,13 +46,13 @@ Observability
 
 ## Monorepo Structure
 
-The project is a monorepo of three independent services: `app/`, `mcp-vocabulary/`, and `mcp-grammar/`. Each has its own database, Dockerfile, data files, scripts, and tests. They share no code and no database.
+The project is a monorepo of three independent services: `app/`, `mcp-vocabulary/`, and `mcp-grammar/`. Each has its own database, Dockerfile, data files, scripts, and tests. They share no business logic, data access code, or domain models. A narrow exception applies for cross-cutting infrastructure — see Decision 26.
 
 **Why three separate services:**
 
 The vocabulary, grammar, and orchestration layers have completely different rates of change and data concerns. Vocabulary expands constantly from user contributions. Grammar nodes are rarer, higher-authority additions. The orchestration layer changes with LLM features and UI work. Coupling them into a shared database would mean migrations that touch unrelated concerns, and coupling them into shared code would create accidental dependencies.
 
-**Rule for contributors:** Most changes are bounded to a single subproject directory. If a change spans more than one of `app/`, `mcp-vocabulary/`, or `mcp-grammar/`, it is a cross-service change and requires more careful review of the service boundary.
+**Rule for contributors:** Most changes are bounded to a single subproject directory. If a change spans more than one of `app/`, `mcp-vocabulary/`, or `mcp-grammar/`, it is a cross-service change and requires more careful review of the service boundary. Changes to `libs/` are an exception — they affect all services simultaneously and require extra care.
 
 For service-specific work, open Claude Code inside the service directory (`cd app && claude`, etc.). Open at the repo root only for cross-service changes.
 
@@ -348,3 +348,47 @@ Reason: a single ingress point provides one place for cross-cutting concerns —
 **Auth posture (dev):** keyless. Tyk enforces no API key in the default configuration. Rate limits are set in `gateway/policies/policies.json` but not enforced per-consumer. Future hardening — API keys, OAuth, per-consumer quotas — is a policy edit, not an architecture change.
 
 **Standalone preserved:** `cd mcp-vocabulary && make up` continues to work without the gateway. The gateway routing is purely additive. `app/` falls back to direct-mode by setting `VOCABULARY_SERVICE_URL=http://mcp-vocabulary:8001`.
+
+---
+
+### Decision 26 — Narrow shared library for cross-cutting infrastructure
+
+A `libs/` directory at the repo root holds pip-installable packages for
+infrastructure concerns that are genuinely shared across all three services
+with a single rate of change.
+
+**What belongs in `libs/`:**
+- Observability middleware (request metrics, trace-to-exemplar wiring)
+- OTel bootstrap helpers
+- Structured logging setup
+- Health-check or auth middleware that applies uniformly to all services
+
+**What is explicitly forbidden in `libs/`:**
+- Business logic of any kind
+- Data access code or database helpers
+- Domain models (vocabulary entries, grammar nodes, conversation state)
+- Anything that is service-specific or would change at a different rate
+  across the three services
+
+**Why this is different from the "no shared code" rule:**
+
+The prohibition on shared code targets coupling of *business logic* with
+different rates of change — vocabulary expansion, grammar authoring, and
+orchestration features each change independently and for different reasons.
+Cross-cutting infrastructure (how requests are counted, how traces are
+exported) has a single rate of change driven by the observability stack,
+not by any service's domain. The original prohibition still holds for all
+domain code.
+
+**Packaging and installation:**
+
+Each package in `libs/` is a pip-installable Python package with its own
+`pyproject.toml`. Services install it as a regular dependency; they do not
+import across directory boundaries. Each service's Dockerfile copies
+`libs/` into the build context and installs from the local path.
+
+**Current packages:**
+- `libs/kapampangan_obs/` — `kapampangan-obs` package: exports
+  `MetricsMiddleware`. Each service injects its own metric objects into
+  the middleware constructor so each service retains ownership of its
+  own Prometheus registry.

@@ -14,10 +14,15 @@ from httpx import AsyncClient, ASGITransport
 def app():
     """Minimal test app: all routes, no lifespan, no telemetry."""
     from routes import chat, health, feedback, vocab, export
-    from middleware import MetricsMiddleware
+    from kapampangan_obs import MetricsMiddleware
+    from metrics import REQUESTS_TOTAL, REQUEST_DURATION
 
     test_app = FastAPI()
-    test_app.add_middleware(MetricsMiddleware)
+    test_app.add_middleware(
+        MetricsMiddleware,
+        requests_total=REQUESTS_TOTAL,
+        request_duration=REQUEST_DURATION,
+    )
     test_app.include_router(health.router)
     test_app.include_router(chat.router, prefix="/api")
     test_app.include_router(feedback.router, prefix="/api")

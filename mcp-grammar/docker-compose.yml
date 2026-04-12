@@ -8,7 +8,9 @@
 services:
 
   mcp-grammar:
-    build: .
+    build:
+      context: ..
+      dockerfile: mcp-grammar/Dockerfile
     ports:
       - "8002:8002"
     environment:

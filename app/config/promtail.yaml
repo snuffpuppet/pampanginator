@@ -15,11 +15,23 @@ scrape_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 5s
         filters:
-          # Only collect logs from this project's containers
+          # Each sub-project runs under its own compose project name
           - name: label
-            values: ["com.docker.compose.project=pampanginator"]
+            values:
+              - "com.docker.compose.project=app"
+              - "com.docker.compose.project=mcp-vocabulary"
+              - "com.docker.compose.project=mcp-grammar"
     relabel_configs:
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+      # Normalise mcp-* service names to match dashboard label queries
+      - source_labels: [service]
+        regex: "mcp-vocabulary"
+        replacement: "vocab"
+        target_label: service
+      - source_labels: [service]
+        regex: "mcp-grammar"
+        replacement: "grammar"
         target_label: service
       - source_labels: [__meta_docker_container_name]
         regex: /(.*)

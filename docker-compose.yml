@@ -49,6 +49,9 @@ services:
       - ./app/config/prometheus.yaml:/etc/prometheus.yaml
     ports:
       - "9090:9090"   # Prometheus UI
+    networks:
+      - default
+      - pampanginator
 
   loki:
     image: grafana/loki:3.3.2

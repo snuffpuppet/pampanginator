@@ -2,7 +2,7 @@ COMPOSE      := docker compose
 CODEGEN      := docker compose -f docker-compose.codegen.yml
 TEST_COMPOSE := docker compose -f docker-compose.test.yml --env-file /dev/null -p mcp-vocabulary-test
 
-.PHONY: up down logs test test-fast test-build shell generate check-generated
+.PHONY: up down logs build rebuild test test-fast test-build shell generate check-generated
 
 ## Start the mcp-vocabulary service + vocab-postgres (standalone dev)
 up:
@@ -12,6 +12,14 @@ up:
 ## Stop the service
 down:
 	$(COMPOSE) down
+
+## Build service images (incremental)
+build:
+	$(COMPOSE) build
+
+## Rebuild all service images from scratch (no cache)
+rebuild:
+	$(COMPOSE) build --no-cache
 
 ## Show logs
 logs:

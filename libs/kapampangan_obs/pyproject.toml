@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kapampangan-obs"
+version = "0.1.0"
+description = "Cross-cutting observability middleware for the Kapampangan tutor services"
+dependencies = [
+    "starlette",
+    "opentelemetry-api",
+    "prometheus-client>=0.20.0",
+]

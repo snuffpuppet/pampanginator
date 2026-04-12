@@ -10,7 +10,7 @@ version: "3.9"
 services:
   test-mcp-vocabulary:
     build:
-      context: .
-      dockerfile: Dockerfile.test
+      context: ..
+      dockerfile: mcp-vocabulary/Dockerfile.test
     volumes:
       - .:/app  # live source — no rebuild needed after code changes

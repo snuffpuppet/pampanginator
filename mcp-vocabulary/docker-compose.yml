@@ -8,7 +8,9 @@
 services:
 
   mcp-vocabulary:
-    build: .
+    build:
+      context: ..
+      dockerfile: mcp-vocabulary/Dockerfile
     ports:
       - "8001:8001"
     environment:

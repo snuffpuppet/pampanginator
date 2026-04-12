@@ -18,14 +18,14 @@ services:
 
   test-mcp-vocabulary:
     build:
-      context: ./mcp-vocabulary
-      dockerfile: Dockerfile.test
+      context: .
+      dockerfile: mcp-vocabulary/Dockerfile.test
     volumes:
       - ./mcp-vocabulary:/app  # live source — no rebuild needed after code changes
 
   test-mcp-grammar:
     build:
-      context: ./mcp-grammar
-      dockerfile: Dockerfile.test
+      context: .
+      dockerfile: mcp-grammar/Dockerfile.test
     volumes:
       - ./mcp-grammar:/app  # live source — no rebuild needed after code changes

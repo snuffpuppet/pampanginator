@@ -5,7 +5,7 @@ TEST_COMPOSE      := docker compose -f docker-compose.test.yml --env-file /dev/n
 TEST_COMPOSE_VOCAB   := docker compose -f mcp-vocabulary/docker-compose.yml --env-file /dev/null -p pampanginator-mcp-vocabulary-test
 TEST_COMPOSE_GRAMMAR := docker compose -f mcp-grammar/docker-compose.test.yml --env-file /dev/null -p pampanginator-grammar-test
 
-.PHONY: test test-fast test-build test-vocab test-grammar test-all up down build \
+.PHONY: test test-fast test-build test-vocab test-grammar test-all up down build rebuild \
         up-app up-vocab up-grammar up-gateway down-app down-vocab down-grammar down-gateway \
         logs-app logs-vocab logs-grammar
 
@@ -54,9 +54,17 @@ down:
 	$(MAKE) -C mcp-vocabulary down
 	$(MAKE) -C mcp-grammar down
 
-## Build observability images (sub-project images build automatically on 'make up')
+## Build all sub-project service images (incremental)
 build:
-	$(COMPOSE) build
+	$(MAKE) -C mcp-vocabulary build
+	$(MAKE) -C mcp-grammar build
+	$(MAKE) -C app build
+
+## Rebuild all sub-project service images from scratch (no cache)
+rebuild:
+	$(MAKE) -C mcp-vocabulary rebuild
+	$(MAKE) -C mcp-grammar rebuild
+	$(MAKE) -C app rebuild
 
 ## Start only the app service (standalone dev)
 up-app:

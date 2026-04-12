@@ -9,7 +9,8 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 
-from middleware import MetricsMiddleware
+from kapampangan_obs import MetricsMiddleware
+from metrics import REQUESTS_TOTAL, REQUEST_DURATION
 
 
 @pytest.fixture(scope="session")
@@ -19,7 +20,11 @@ def app():
     from routes.admin import router as admin_router
 
     test_app = FastAPI()
-    test_app.add_middleware(MetricsMiddleware)
+    test_app.add_middleware(
+        MetricsMiddleware,
+        requests_total=REQUESTS_TOTAL,
+        request_duration=REQUEST_DURATION,
+    )
     test_app.include_router(traverse_router)
     test_app.include_router(admin_router)
     return test_app

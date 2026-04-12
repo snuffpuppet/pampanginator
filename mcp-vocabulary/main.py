@@ -29,8 +29,8 @@ from mcp_vocabulary_api.apis.admin_api import router as admin_router
 
 from services import embeddings, db, seed
 from telemetry import init_telemetry
-from metrics import metrics_endpoint
-from middleware import MetricsMiddleware
+from metrics import metrics_endpoint, REQUESTS_TOTAL, REQUEST_DURATION
+from kapampangan_obs import MetricsMiddleware
 from logging_setup import setup_logging
 
 setup_logging()
@@ -74,7 +74,11 @@ app.openapi = _load_openapi
 
 init_telemetry(app)
 
-app.add_middleware(MetricsMiddleware)
+app.add_middleware(
+    MetricsMiddleware,
+    requests_total=REQUESTS_TOTAL,
+    request_duration=REQUEST_DURATION,
+)
 app.add_route("/metrics", metrics_endpoint)
 
 app.include_router(lookup_router)

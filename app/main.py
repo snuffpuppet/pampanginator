@@ -14,8 +14,8 @@ from routes import chat, health, feedback, vocab, export, admin_knowledge
 from services.tool_router import load_tools
 from services import llm, db
 from telemetry import init_telemetry
-from metrics import metrics_endpoint
-from middleware import MetricsMiddleware
+from metrics import metrics_endpoint, REQUESTS_TOTAL, REQUEST_DURATION
+from kapampangan_obs import MetricsMiddleware
 from logging_setup import setup_logging
 
 setup_logging()
@@ -55,7 +55,11 @@ app = FastAPI(
 # Must come before route registration so auto-instrumentation covers all routes
 init_telemetry(app)
 
-app.add_middleware(MetricsMiddleware)
+app.add_middleware(
+    MetricsMiddleware,
+    requests_total=REQUESTS_TOTAL,
+    request_duration=REQUEST_DURATION,
+)
 app.add_route("/metrics", metrics_endpoint)
 
 app.include_router(chat.router, prefix="/api")

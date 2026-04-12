@@ -10,7 +10,7 @@ version: "3.9"
 services:
   test-mcp-grammar:
     build:
-      context: .
-      dockerfile: Dockerfile.test
+      context: ..
+      dockerfile: mcp-grammar/Dockerfile.test
     volumes:
       - .:/app  # live source — no rebuild needed after code changes

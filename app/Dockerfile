@@ -11,8 +11,10 @@ RUN npm run build
 # Stage 2 — Python runtime
 FROM python:3.12-slim
 WORKDIR /app
+COPY libs/ /libs/
 COPY app/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir /libs/kapampangan_obs -r requirements.txt && \
+    rm -rf /libs/
 COPY app/ .
 COPY --from=frontend-build /build/app/frontend ./frontend
 

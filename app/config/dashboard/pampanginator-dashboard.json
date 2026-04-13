@@ -87,7 +87,7 @@
       "id": 3,
       "type": "stat",
       "title": "Error Count (5m)",
-      "description": "Number of 4xx/5xx responses in the last 5 minutes \u2014 turns red on any single error",
+      "description": "Number of error responses in the last 5 minutes (4xx except 404, plus all 5xx) \u2014 turns red on any single error. 404 is excluded because the vocabulary service correctly returns 404 for unknown words.",
       "gridPos": {
         "x": 6,
         "y": 1,
@@ -130,7 +130,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(kapampangan_requests_total{status_code=~\"[45]..\"}[5m]))",
+          "expr": "sum(increase(kapampangan_requests_total{status_code=~\"[45]..\",status_code!=\"404\"}[5m]))",
           "legendFormat": "errors"
         }
       ]

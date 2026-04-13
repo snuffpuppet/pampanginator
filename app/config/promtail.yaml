@@ -14,13 +14,8 @@ scrape_configs:
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 5s
-        filters:
-          # Each sub-project runs under its own compose project name
-          - name: label
-            values:
-              - "com.docker.compose.project=app"
-              - "com.docker.compose.project=mcp-vocabulary"
-              - "com.docker.compose.project=mcp-grammar"
+        # No label filter — Docker Desktop socket proxy doesn't reliably support
+        # multi-value label filters. The keep relabel below does the filtering.
     relabel_configs:
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         target_label: service
@@ -38,9 +33,9 @@ scrape_configs:
         target_label: container
       - source_labels: [__meta_docker_container_log_stream]
         target_label: stream
-      # Drop collector/infra container logs — keep only the three app services
+      # Keep only the three app services (exact match after normalization above)
       - source_labels: [service]
-        regex: app|vocab|grammar
+        regex: ^(app|vocab|grammar)$
         action: keep
     pipeline_stages:
       # Parse JSON log lines emitted by python-json-logger
